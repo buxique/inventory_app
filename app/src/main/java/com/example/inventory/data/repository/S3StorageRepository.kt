@@ -1,55 +1,84 @@
 package com.example.inventory.data.repository
 
 import android.content.Context
-import com.amazonaws.auth.BasicAWSCredentials
-import com.amazonaws.ClientConfiguration
-import com.amazonaws.regions.Region
-import com.amazonaws.regions.Regions
-import com.amazonaws.services.s3.AmazonS3Client
-import com.amazonaws.services.s3.model.GetObjectRequest
-import com.amazonaws.services.s3.model.PutObjectRequest
+import com.example.inventory.util.Constants
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.net.URI
+import java.time.Duration
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration
+import software.amazon.awssdk.core.retry.RetryPolicy
+import software.amazon.awssdk.core.sync.RequestBody
+import software.amazon.awssdk.core.sync.ResponseTransformer
+import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
+import software.amazon.awssdk.regions.Region
+import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.model.GetObjectRequest
+import software.amazon.awssdk.services.s3.model.PutObjectRequest
 
 class S3StorageRepository(
-    private val context: Context
+    context: Context
 ) : StorageRepository {
+    private val appContext = context.applicationContext
     override suspend fun uploadBackup(file: File, config: S3Config): String? = withContext(Dispatchers.IO) {
         if (config.endpoint.isBlank() || config.bucket.isBlank() || config.accessKey.isBlank() || config.secretKey.isBlank()) {
             return@withContext null
         }
-        val client = createClient(config)
         val key = "backup/${System.currentTimeMillis()}-${file.name}"
-        client.putObject(PutObjectRequest(config.bucket, key, file))
-        key
+        createClient(config).use { client ->
+            client.putObject(
+                PutObjectRequest.builder()
+                    .bucket(config.bucket)
+                    .key(key)
+                    .build(),
+                RequestBody.fromFile(file)
+            )
+            key
+        }
     }
 
     override suspend fun downloadBackup(key: String, config: S3Config): File? = withContext(Dispatchers.IO) {
         if (config.endpoint.isBlank() || config.bucket.isBlank() || config.accessKey.isBlank() || config.secretKey.isBlank()) {
             return@withContext null
         }
-        val client = createClient(config)
-        val target = File(context.cacheDir, key.substringAfterLast("/"))
-        client.getObject(GetObjectRequest(config.bucket, key), target)
-        target
+        val target = File(appContext.cacheDir, key.substringAfterLast("/"))
+        createClient(config).use { client ->
+            client.getObject(
+                GetObjectRequest.builder()
+                    .bucket(config.bucket)
+                    .key(key)
+                    .build(),
+                ResponseTransformer.toFile(target.toPath())
+            )
+            target
+        }
     }
 
-    @Suppress("DEPRECATION")
-    private fun createClient(config: S3Config): AmazonS3Client {
-        val credentials = BasicAWSCredentials(config.accessKey, config.secretKey)
-        val clientConfig = ClientConfiguration().apply {
-            connectionTimeout = 15000  // 15秒连接超时
-            socketTimeout = 30000      // 30秒读取超时
-            maxErrorRetry = 3          // 重试3次
+    private fun createClient(config: S3Config): S3Client {
+        val credentials = AwsBasicCredentials.create(config.accessKey, config.secretKey)
+        val region = if (config.region.isNotBlank()) {
+            Region.of(config.region)
+        } else {
+            Region.US_EAST_1
         }
-        val client = AmazonS3Client(credentials, clientConfig)
+        val httpClient = UrlConnectionHttpClient.builder()
+            .connectionTimeout(Duration.ofMillis(Constants.Network.CONNECTION_TIMEOUT.toLong()))
+            .socketTimeout(Duration.ofMillis(Constants.Network.SOCKET_TIMEOUT.toLong()))
+            .build()
+        val overrideConfig = ClientOverrideConfiguration.builder()
+            .retryPolicy(RetryPolicy.builder().numRetries(Constants.Network.MAX_ERROR_RETRY).build())
+            .build()
+        val builder = S3Client.builder()
+            .credentialsProvider(StaticCredentialsProvider.create(credentials))
+            .region(region)
+            .httpClient(httpClient)
+            .overrideConfiguration(overrideConfig)
         if (config.endpoint.isNotBlank()) {
-            client.setEndpoint(config.endpoint)
+            builder.endpointOverride(URI.create(config.endpoint))
         }
-        if (config.region.isNotBlank()) {
-            client.setRegion(Region.getRegion(Regions.fromName(config.region)))
-        }
-        return client
+        return builder.build()
     }
 }

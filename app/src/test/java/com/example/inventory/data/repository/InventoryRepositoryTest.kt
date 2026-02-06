@@ -3,6 +3,7 @@ package com.example.inventory.data.repository
 import androidx.paging.PagingSource
 import com.example.inventory.data.db.CategoryDao
 import com.example.inventory.data.db.InventoryDao
+import com.example.inventory.data.db.InventoryDatabase
 import com.example.inventory.data.model.InventoryItemEntity
 import com.example.inventory.data.model.StockRecordEntity
 import kotlinx.coroutines.flow.first
@@ -32,13 +33,16 @@ class InventoryRepositoryTest {
     
     @Mock
     private lateinit var mockCategoryDao: CategoryDao
+
+    @Mock
+    private lateinit var mockDatabase: InventoryDatabase
     
     private lateinit var repository: InventoryRepositoryImpl
     
     @Before
     fun setup() {
         MockitoAnnotations.openMocks(this)
-        repository = InventoryRepositoryImpl(mockDao, mockCategoryDao)
+        repository = InventoryRepositoryImpl(mockDao, mockCategoryDao, mockDatabase)
     }
     
     @Test

@@ -27,7 +27,7 @@ okhttp = "4.12.0"
 moshi = "1.15.1"
 
 # AWS
-awsSdk = "2.73.0"
+awsSdk = "2.25.68"
 
 # File Processing
 poi = "5.2.5"
@@ -100,8 +100,10 @@ moshi-kotlin = { group = "com.squareup.moshi", name = "moshi-kotlin", version.re
 kotlin-reflect = { group = "org.jetbrains.kotlin", name = "kotlin-reflect", version.ref = "kotlin" }
 
 # AWS
-aws-s3 = { group = "com.amazonaws", name = "aws-android-sdk-s3", version.ref = "awsSdk" }
-aws-core = { group = "com.amazonaws", name = "aws-android-sdk-core", version.ref = "awsSdk" }
+aws-s3 = { group = "software.amazon.awssdk", name = "s3", version.ref = "awsSdk" }
+aws-auth = { group = "software.amazon.awssdk", name = "auth", version.ref = "awsSdk" }
+aws-regions = { group = "software.amazon.awssdk", name = "regions", version.ref = "awsSdk" }
+aws-url-connection-client = { group = "software.amazon.awssdk", name = "url-connection-client", version.ref = "awsSdk" }
 
 # File Processing
 poi = { group = "org.apache.poi", name = "poi", version.ref = "poi" }
@@ -166,7 +168,9 @@ network = [
 
 aws = [
     "aws-s3",
-    "aws-core"
+    "aws-auth",
+    "aws-regions",
+    "aws-url-connection-client"
 ]
 
 file-processing = [

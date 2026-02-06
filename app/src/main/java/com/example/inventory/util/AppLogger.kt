@@ -40,10 +40,12 @@ object AppLogger {
      * 警告日志
      */
     fun w(message: String, tag: String = TAG, throwable: Throwable? = null) {
-        if (throwable != null) {
-            Log.w(tag, message, throwable)
-        } else {
-            Log.w(tag, message)
+        if (DEBUG) {
+            if (throwable != null) {
+                Log.w(tag, message, throwable)
+            } else {
+                Log.w(tag, message)
+            }
         }
     }
     
@@ -56,8 +58,6 @@ object AppLogger {
         } else {
             Log.e(tag, message)
         }
-        // TODO: 集成Crashlytics或其他崩溃报告工具
-        // Crashlytics.log("$tag: $message")
     }
     
     // ==================== 业务日志 ====================

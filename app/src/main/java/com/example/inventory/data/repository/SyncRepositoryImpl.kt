@@ -9,6 +9,7 @@ import com.example.inventory.data.model.InventoryItemEntity
 import com.example.inventory.util.AppLogger
 import com.example.inventory.util.PrefsKeys
 import com.example.inventory.util.SyncConfig
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
@@ -16,6 +17,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.io.File
+import java.security.MessageDigest
 
 /**
  * 同步仓库实现类
@@ -78,7 +80,6 @@ class SyncRepositoryImpl(
                     val config = loadS3Config() 
                         ?: throw IllegalStateException("未配置S3")
 
-                    // 增量同步检查
                     val lastPushAt = prefs.getLong(KEY_LAST_PUSH_AT, 0L)
                     val maxLastModified = inventoryRepository.getMaxLastModified() ?: 0L
                     
@@ -87,19 +88,24 @@ class SyncRepositoryImpl(
                         return@withLock
                     }
 
-                    val backup = exportRepository.backupDatabase() 
+                    val backup = exportRepository.backupDatabase()
                         ?: throw IllegalStateException("备份失败")
                     val key = storageRepository.uploadBackup(backup, config) 
                         ?: throw java.io.IOException("上传失败")
+                    val mergedItems = inventoryRepository.getAllItemsSnapshot()
+                    val syncHash = computeItemsHash(mergedItems)
                     
                     prefs.edit()
                         .putString(KEY_LAST_SYNC_KEY, key)
                         .putLong(KEY_LAST_PUSH_AT, System.currentTimeMillis())
+                        .putString(KEY_LAST_SYNC_HASH, syncHash)
                         .apply()
                     
                     AppLogger.logSync("push", true, "key=$key")
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             AppLogger.logSync("push", false, e.message ?: "未知错误")
             throw e
@@ -123,14 +129,19 @@ class SyncRepositoryImpl(
                     if (!success) {
                         throw IllegalStateException("数据库恢复失败")
                     }
+                    val mergedItems = inventoryRepository.getAllItemsSnapshot()
+                    val syncHash = computeItemsHash(mergedItems)
                     
                     prefs.edit()
                         .putLong(KEY_LAST_PULL_AT, System.currentTimeMillis())
+                        .putString(KEY_LAST_SYNC_HASH, syncHash)
                         .apply()
                     
                     AppLogger.logSync("pull", true)
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             AppLogger.logSync("pull", false, e.message ?: "未知错误")
             throw e
@@ -171,19 +182,24 @@ class SyncRepositoryImpl(
                     }
                     
                     // 推送合并后的数据
-                    val backup = exportRepository.backupDatabase() 
+                    val backup = exportRepository.backupDatabase()
                         ?: throw IllegalStateException("备份失败")
                     val newKey = storageRepository.uploadBackup(backup, config) 
                         ?: throw java.io.IOException("上传失败")
+                    val mergedItems = inventoryRepository.getAllItemsSnapshot()
+                    val syncHash = computeItemsHash(mergedItems)
                     
                     prefs.edit()
                         .putString(KEY_LAST_SYNC_KEY, newKey)
                         .putLong(KEY_LAST_MERGE_AT, System.currentTimeMillis())
+                        .putString(KEY_LAST_SYNC_HASH, syncHash)
                         .apply()
                     
                     AppLogger.logSync("merge", true, "key=$newKey, updated=${itemsToUpdate.size}, inserted=${itemsToInsert.size} items")
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             AppLogger.logSync("merge", false, e.message ?: "未知错误")
             throw e
@@ -248,7 +264,29 @@ class SyncRepositoryImpl(
             val lastPushAt = prefs.getLong(KEY_LAST_PUSH_AT, 0L)
             val lastPullAt = prefs.getLong(KEY_LAST_PULL_AT, 0L)
             val lastMergeAt = prefs.getLong(KEY_LAST_MERGE_AT, 0L)
-            val hasConflict = lastPushAt > 0L && lastPullAt > 0L && lastPushAt > lastPullAt && lastMergeAt < lastPushAt
+            val lastSyncHash = prefs.getString(KEY_LAST_SYNC_HASH, "").orEmpty()
+            val legacyConflict = lastPushAt > 0L && lastPullAt > 0L && lastPushAt > lastPullAt && lastMergeAt < lastPushAt
+            val localItems = inventoryRepository.getAllItemsSnapshot()
+            val localHash = computeItemsHash(localItems)
+            val localChanged = lastSyncHash.isNotBlank() && localHash != lastSyncHash
+            val remoteChanged = if (lastSyncHash.isBlank() || lastKey.isBlank()) {
+                false
+            } else {
+                val config = loadS3Config()
+                if (config != null) {
+                    val file = storageRepository.downloadBackup(lastKey, config)
+                    if (file != null) {
+                        val remoteItems = readInventoryItems(file)
+                        val remoteHash = computeItemsHash(remoteItems)
+                        remoteHash != lastSyncHash
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            val hasConflict = if (lastSyncHash.isBlank()) legacyConflict else (localChanged && remoteChanged)
             SyncStatus(
                 lastKey = lastKey,
                 lastPushAt = lastPushAt,
@@ -392,15 +430,58 @@ class SyncRepositoryImpl(
         }
     }
 
+    private fun computeItemsHash(items: List<InventoryItemEntity>): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        items.sortedBy { it.id }.forEach { item ->
+            digest.update(item.id.toString().toByteArray())
+            digest.update(byteArrayOf(0))
+            digest.update(item.listId.toString().toByteArray())
+            digest.update(byteArrayOf(0))
+            digest.update(item.name.toByteArray())
+            digest.update(byteArrayOf(0))
+            digest.update(item.brand.toByteArray())
+            digest.update(byteArrayOf(0))
+            digest.update(item.model.toByteArray())
+            digest.update(byteArrayOf(0))
+            digest.update(item.parameters.toByteArray())
+            digest.update(byteArrayOf(0))
+            digest.update(item.barcode.toByteArray())
+            digest.update(byteArrayOf(0))
+            digest.update(item.quantity.toString().toByteArray())
+            digest.update(byteArrayOf(0))
+            digest.update(item.unit.toByteArray())
+            digest.update(byteArrayOf(0))
+            digest.update(item.location.toByteArray())
+            digest.update(byteArrayOf(0))
+            digest.update(item.remark.toByteArray())
+            digest.update(byteArrayOf(0))
+            digest.update(item.lastModified.toString().toByteArray())
+            digest.update(byteArrayOf(0))
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
 }
 
-private fun securePreferences(context: Context) = EncryptedSharedPreferences.create(
-    context,
-    PREFS_NAME,
-    MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
-    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-)
+private fun securePreferences(context: Context): SharedPreferences {
+    val masterKey = try {
+        MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .setRequestStrongBoxBacked(true)
+            .build()
+    } catch (e: Exception) {
+        MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+    }
+    return EncryptedSharedPreferences.create(
+        context,
+        PREFS_NAME,
+        masterKey,
+        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+    )
+}
 
 private const val PREFS_NAME = PrefsKeys.SETTINGS_PREFS_NAME
 private const val KEY_S3_ENDPOINT = PrefsKeys.KEY_S3_ENDPOINT
@@ -412,3 +493,4 @@ private const val KEY_LAST_SYNC_KEY = PrefsKeys.KEY_LAST_SYNC_KEY
 private const val KEY_LAST_PUSH_AT = PrefsKeys.KEY_LAST_PUSH_AT
 private const val KEY_LAST_PULL_AT = PrefsKeys.KEY_LAST_PULL_AT
 private const val KEY_LAST_MERGE_AT = PrefsKeys.KEY_LAST_MERGE_AT
+private const val KEY_LAST_SYNC_HASH = PrefsKeys.KEY_LAST_SYNC_HASH

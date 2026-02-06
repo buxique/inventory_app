@@ -1,10 +1,10 @@
 # ==================== AWS SDK ====================
 # 仅保留实际使用的AWS类
--keep class com.amazonaws.services.s3.** { *; }
--keep class com.amazonaws.auth.BasicAWSCredentials { *; }
--keep class com.amazonaws.ClientConfiguration { *; }
--keep class com.amazonaws.regions.** { *; }
--dontwarn com.amazonaws.**
+-keep class software.amazon.awssdk.services.s3.** { *; }
+-keep class software.amazon.awssdk.auth.credentials.** { *; }
+-keep class software.amazon.awssdk.regions.** { *; }
+-keep class software.amazon.awssdk.http.** { *; }
+-dontwarn software.amazon.awssdk.**
 
 # ==================== Baidu Paddle Lite ====================
 # 保留Paddle Lite核心类
@@ -102,11 +102,4 @@
     private void readObject(java.io.ObjectInputStream);
     java.lang.Object writeReplace();
     java.lang.Object readResolve();
-}
-
-# 移除日志
--assumenosideeffects class android.util.Log {
-    public static *** d(...);
-    public static *** v(...);
-    public static *** i(...);
 }

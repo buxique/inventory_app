@@ -1,6 +1,7 @@
 package com.example.inventory.data.repository
 
 import com.example.inventory.data.db.InventoryDao
+import com.example.inventory.data.db.InventoryDatabase
 import com.example.inventory.data.db.CategoryDao
 import com.example.inventory.data.model.InventoryItemEntity
 import com.example.inventory.data.model.ItemCategoryEntity
@@ -22,7 +23,8 @@ import kotlinx.coroutines.withContext
  */
 class InventoryRepositoryImpl(
     private val dao: InventoryDao,
-    private val categoryDao: CategoryDao  // 移除可空和默认值，改为必需参数
+    private val categoryDao: CategoryDao,
+    private val database: InventoryDatabase
 ) : InventoryRepository {
     
     /**
@@ -86,7 +88,9 @@ class InventoryRepositoryImpl(
         if (items.isEmpty()) return@withContext emptyList()
         val now = System.currentTimeMillis()
         val newItems = items.map { it.copy(lastModified = now) }
-        dao.insertItems(newItems)
+        withFtsBatch {
+            dao.insertItems(newItems)
+        }
     }
     
     /**
@@ -96,7 +100,9 @@ class InventoryRepositoryImpl(
         if (items.isEmpty()) return@withContext 0
         val now = System.currentTimeMillis()
         val updatedItems = items.map { it.copy(lastModified = now) }
-        dao.updateItems(updatedItems)
+        withFtsBatch {
+            dao.updateItems(updatedItems)
+        }
     }
     
     /**
@@ -104,7 +110,9 @@ class InventoryRepositoryImpl(
      */
     override suspend fun batchDeleteItems(itemIds: List<Long>): Int = withContext(Dispatchers.IO) {
         if (itemIds.isEmpty()) return@withContext 0
-        dao.deleteItems(itemIds)
+        withFtsBatch {
+            dao.deleteItems(itemIds)
+        }
     }
     
     /**
@@ -362,5 +370,46 @@ class InventoryRepositoryImpl(
         
         // 返回更新后的商品
         updatedItem
+    }
+
+    private suspend fun <T> withFtsBatch(block: suspend () -> T): T {
+        val db = database.openHelper.writableDatabase
+        db.execSQL("DROP TRIGGER IF EXISTS `inventory_items_ai`")
+        db.execSQL("DROP TRIGGER IF EXISTS `inventory_items_ad`")
+        db.execSQL("DROP TRIGGER IF EXISTS `inventory_items_au`")
+        return try {
+            block()
+        } finally {
+            db.execSQL("INSERT INTO inventory_items_fts(inventory_items_fts) VALUES('rebuild')")
+            db.execSQL(
+                """
+                CREATE TRIGGER IF NOT EXISTS `inventory_items_ai` AFTER INSERT ON `inventory_items`
+                BEGIN
+                    INSERT INTO inventory_items_fts(rowid, name, brand, model, barcode, location, remark)
+                    VALUES (new.id, new.name, new.brand, new.model, new.barcode, new.location, new.remark);
+                END
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE TRIGGER IF NOT EXISTS `inventory_items_ad` AFTER DELETE ON `inventory_items`
+                BEGIN
+                    INSERT INTO inventory_items_fts(inventory_items_fts, rowid, name, brand, model, barcode, location, remark)
+                    VALUES('delete', old.id, old.name, old.brand, old.model, old.barcode, old.location, old.remark);
+                END
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE TRIGGER IF NOT EXISTS `inventory_items_au` AFTER UPDATE ON `inventory_items`
+                BEGIN
+                    INSERT INTO inventory_items_fts(inventory_items_fts, rowid, name, brand, model, barcode, location, remark)
+                    VALUES('delete', old.id, old.name, old.brand, old.model, old.barcode, old.location, old.remark);
+                    INSERT INTO inventory_items_fts(rowid, name, brand, model, barcode, location, remark)
+                    VALUES (new.id, new.name, new.brand, new.model, new.barcode, new.location, new.remark);
+                END
+                """.trimIndent()
+            )
+        }
     }
 }

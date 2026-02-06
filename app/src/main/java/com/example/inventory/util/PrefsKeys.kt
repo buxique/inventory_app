@@ -12,6 +12,7 @@ object PrefsKeys {
     // ==================== Auth 相关 ====================
     const val AUTH_PREFS_NAME = "secure_auth"
     const val KEY_USERS = "users"
+    const val KEY_LOGIN_ATTEMPTS = "login_attempts"
     
     // ==================== Settings 相关 ====================
     const val SETTINGS_PREFS_NAME = "secure_settings"
@@ -34,6 +35,7 @@ object PrefsKeys {
     const val KEY_LAST_PUSH_AT = "sync_last_push_at"
     const val KEY_LAST_PULL_AT = "sync_last_pull_at"
     const val KEY_LAST_MERGE_AT = "sync_last_merge_at"
+    const val KEY_LAST_SYNC_HASH = "sync_last_hash"
 
     val LANGUAGE_PREF_KEY = stringPreferencesKey(KEY_LANGUAGE)
     val DARK_MODE_PREF_KEY = booleanPreferencesKey(KEY_DARK_MODE)

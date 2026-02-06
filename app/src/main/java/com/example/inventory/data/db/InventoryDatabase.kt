@@ -299,7 +299,7 @@ abstract class InventoryDatabase : RoomDatabase() {
             }
         }
             
-        // 从版枬2升级到3：添加搜索历史表
+        // 从版本2升级到3：添加搜索历史表
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // 创建搜索历史表

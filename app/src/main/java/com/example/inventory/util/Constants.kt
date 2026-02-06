@@ -86,7 +86,7 @@ object Constants {
     // ==================== 密码策略 ====================
     object Password {
         const val MIN_LENGTH = 10
-        const val PBKDF2_ITERATIONS = 100_000
+        const val PBKDF2_ITERATIONS = 310_000
         const val SALT_LENGTH = 32
         const val HASH_LENGTH = 256
         const val ALGORITHM = "PBKDF2WithHmacSHA256"

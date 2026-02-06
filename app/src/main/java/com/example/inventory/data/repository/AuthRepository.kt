@@ -11,6 +11,7 @@ interface AuthRepository {
     suspend fun createUser(username: String, password: String, role: String): AuthResult
     suspend fun deleteUser(username: String): AuthResult
     suspend fun resetPassword(username: String, newPassword: String): AuthResult
+    suspend fun unlockAccount(username: String): Boolean
 }
 
 /**

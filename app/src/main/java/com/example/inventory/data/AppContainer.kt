@@ -54,6 +54,7 @@ import com.example.inventory.util.SecurePreferencesManager
 import com.example.inventory.util.settingsDataStore
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import java.util.concurrent.Executors
 
 /**
  * 应用容器
@@ -86,6 +87,8 @@ class AppContainer(context: Context) {
         InventoryDatabase::class.java,
         "inventory.db"
     )
+        .setQueryExecutor(Executors.newSingleThreadExecutor())
+        .setTransactionExecutor(Executors.newSingleThreadExecutor())
         .addMigrations(
             InventoryDatabase.MIGRATION_1_2,
             InventoryDatabase.MIGRATION_2_3,
@@ -101,7 +104,8 @@ class AppContainer(context: Context) {
 
     val inventoryRepository: InventoryRepository = InventoryRepositoryImpl(
         database.inventoryDao(),
-        database.categoryDao()
+        database.categoryDao(),
+        database
     )
     val inventoryListRepository: InventoryListRepository = InventoryListRepositoryImpl(
         database.inventoryListDao()

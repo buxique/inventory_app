@@ -182,41 +182,9 @@ class ExportRepositoryImpl(
                 // 获取 Application 实例并关闭数据库
                 val app = context.applicationContext as? com.example.inventory.InventoryApplication
                 if (app != null) {
-                    // 注意：这里需要在 AppContainer 中添加 closeDatabase() 方法
-                    // 暂时使用重试机制确保数据库文件可写
-                    var retryCount = 0
-                    val maxRetries = 10
-                    while (retryCount < maxRetries) {
-                        try {
-                            // 尝试打开文件进行写入测试
-                            val testStream = dbFile.outputStream()
-                            testStream.close()
-                            break  // 文件可写，退出循环
-                        } catch (e: Exception) {
-                            retryCount++
-                            if (retryCount >= maxRetries) {
-                                throw IllegalStateException("数据库文件被占用，无法恢复")
-                            }
-                            delay(100)  // 等待 100ms 后重试
-                        }
-                    }
+                    waitForFileWritable(dbFile)
                 } else {
-                    // 如果无法获取 Application，使用重试机制
-                    var retryCount = 0
-                    val maxRetries = 10
-                    while (retryCount < maxRetries) {
-                        try {
-                            val testStream = dbFile.outputStream()
-                            testStream.close()
-                            break
-                        } catch (e: Exception) {
-                            retryCount++
-                            if (retryCount >= maxRetries) {
-                                throw IllegalStateException("数据库文件被占用，无法恢复")
-                            }
-                            delay(100)
-                        }
-                    }
+                    waitForFileWritable(dbFile)
                 }
             } catch (e: Exception) {
                 AppLogger.w("关闭数据库连接失败: ${e.message}", "ExportRepository", e)
@@ -273,11 +241,29 @@ class ExportRepositoryImpl(
             SQLiteDatabase.openDatabase(file.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
         }.getOrNull() ?: return false
         return try {
-            db.rawQuery("PRAGMA integrity_check", null).use { cursor ->
+            db.rawQuery("PRAGMA integrity_check", emptyArray()).use { cursor ->
                 cursor.moveToFirst() && cursor.getString(0).equals("ok", ignoreCase = true)
             }
         } finally {
             db.close()
+        }
+    }
+
+    private suspend fun waitForFileWritable(dbFile: File) {
+        var retryCount = 0
+        val maxRetries = 10
+        while (retryCount < maxRetries) {
+            try {
+                val testStream = dbFile.outputStream()
+                testStream.close()
+                return
+            } catch (e: Exception) {
+                retryCount++
+                if (retryCount >= maxRetries) {
+                    throw IllegalStateException("数据库文件被占用，无法恢复")
+                }
+                delay(100)
+            }
         }
     }
 }

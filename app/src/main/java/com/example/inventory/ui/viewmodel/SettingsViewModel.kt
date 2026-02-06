@@ -261,6 +261,16 @@ class SettingsViewModel(
         }
     }
 
+    fun unlockAccount(username: String) {
+        viewModelScope.launch {
+            val success = authRepository.unlockAccount(username)
+            if (!success) {
+                showUserError("未找到用户或账户未锁定")
+            }
+            refreshUsers()
+        }
+    }
+
     fun syncPush() {
         viewModelScope.launch {
             syncRepository.pushOperations()

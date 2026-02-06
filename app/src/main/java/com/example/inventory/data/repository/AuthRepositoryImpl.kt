@@ -1,6 +1,7 @@
 package com.example.inventory.data.repository
 
 import android.content.Context
+import android.content.SharedPreferences
 import com.example.inventory.data.model.UserEntity
 import com.example.inventory.util.AppLogger
 import com.example.inventory.util.Constants
@@ -11,6 +12,10 @@ import com.squareup.moshi.Types
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.security.SecureRandom
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
@@ -44,6 +49,8 @@ class AuthRepositoryImpl(
         .build()
     private val listType = Types.newParameterizedType(List::class.java, StoredUser::class.java)
     private val adapter = moshi.adapter<List<StoredUser>>(listType)
+    private val attemptListType = Types.newParameterizedType(List::class.java, StoredLoginAttempt::class.java)
+    private val attemptAdapter = moshi.adapter<List<StoredLoginAttempt>>(attemptListType)
     
     // 登录尝试记录
     private data class LoginAttempt(
@@ -53,6 +60,9 @@ class AuthRepositoryImpl(
     )
     
     private val loginAttempts = ConcurrentHashMap<String, LoginAttempt>()
+    private val loginAttemptsMutex = Mutex()
+    @Volatile
+    private var loginAttemptsLoaded = false
     
     // 使用统一的安全配置
     private companion object {
@@ -76,8 +86,9 @@ class AuthRepositoryImpl(
      * 5. 记录登录尝试
      */
     override suspend fun login(username: String, password: String): LoginResult {
+        ensureLoginAttemptsLoaded()
         // 检查账户是否被锁定
-        val attempt = loginAttempts.getOrPut(username) { LoginAttempt() }
+        val attempt = getLoginAttempt(username)
         
         if (attempt.lockUntil > System.currentTimeMillis()) {
             val remainingTime = (attempt.lockUntil - System.currentTimeMillis()) / 1000
@@ -88,6 +99,8 @@ class AuthRepositoryImpl(
         // 重置过期的尝试记录
         if (System.currentTimeMillis() - attempt.lastAttemptTime > ATTEMPT_WINDOW) {
             attempt.failCount = 0
+            attempt.lockUntil = 0
+            persistLoginAttempts()
         }
         
         // 验证输入
@@ -99,7 +112,7 @@ class AuthRepositoryImpl(
         // 验证用户
         val users = loadUsers().toMutableList()
         val existing = users.firstOrNull { it.username == username }
-        val hashed = hashPassword(password)
+        val hashed = withContext(Dispatchers.Default) { hashPassword(password) }
         val role = if (existing == null) {
             // 首次登录，创建用户
             val created = StoredUser(username = username, passwordHash = hashed, role = "user")
@@ -109,7 +122,7 @@ class AuthRepositoryImpl(
             created.role
         } else {
             // 验证密码
-            if (!verifyPassword(password, existing.passwordHash)) {
+            if (!withContext(Dispatchers.Default) { verifyPassword(password, existing.passwordHash) }) {
                 val remainingAttempts = MAX_ATTEMPTS - attempt.failCount - 1
                 recordFailedAttempt(username, attempt)
                 return LoginResult.invalidCredentials(remainingAttempts.coerceAtLeast(0))
@@ -119,6 +132,7 @@ class AuthRepositoryImpl(
         
         // 登录成功，清除尝试记录
         loginAttempts.remove(username)
+        persistLoginAttempts()
         AppLogger.logAuth("登录", username, true)
         
         val userEntity = UserEntity(username = username, role = role)
@@ -129,7 +143,7 @@ class AuthRepositoryImpl(
     /**
      * 记录失败的登录尝试
      */
-    private fun recordFailedAttempt(username: String, attempt: LoginAttempt) {
+    private suspend fun recordFailedAttempt(username: String, attempt: LoginAttempt) {
         attempt.failCount++
         attempt.lastAttemptTime = System.currentTimeMillis()
         
@@ -140,13 +154,16 @@ class AuthRepositoryImpl(
             val remainingAttempts = MAX_ATTEMPTS - attempt.failCount
             AppLogger.w("用户 $username 登录失败，剩余尝试次数: $remainingAttempts", "Auth")
         }
+        persistLoginAttempts()
     }
     
     /**
      * 解锁账户（管理员功能）
      */
-    fun unlockAccount(username: String): Boolean {
+    override suspend fun unlockAccount(username: String): Boolean {
+        ensureLoginAttemptsLoaded()
         return if (loginAttempts.remove(username) != null) {
+            persistLoginAttempts()
             AppLogger.i("账户 $username 已解锁", "Auth")
             true
         } else {
@@ -181,7 +198,11 @@ class AuthRepositoryImpl(
         if (!isPasswordValid(password, username)) return AuthResult(false, "密码不符合策略")
         val users = loadUsers().toMutableList()
         if (users.any { it.username == username }) return AuthResult(false, "用户已存在")
-        val created = StoredUser(username = username, passwordHash = hashPassword(password), role = role)
+        val created = StoredUser(
+            username = username,
+            passwordHash = withContext(Dispatchers.Default) { hashPassword(password) },
+            role = role
+        )
         users.add(created)
         saveUsers(users)
         return AuthResult(true)
@@ -203,28 +224,81 @@ class AuthRepositoryImpl(
         val users = loadUsers().toMutableList()
         val index = users.indexOfFirst { it.username == username }
         if (index == -1) return AuthResult(false, "未找到用户")
-        users[index] = users[index].copy(passwordHash = hashPassword(newPassword))
+        users[index] = users[index].copy(passwordHash = withContext(Dispatchers.Default) { hashPassword(newPassword) })
         saveUsers(users)
         return AuthResult(true)
     }
 
-    private fun loadUsers(): List<StoredUser> {
-        val raw = prefs.getString(KEY_USERS, null) ?: return emptyList()
-        return adapter.fromJson(raw).orEmpty()
+    private suspend fun loadUsers(): List<StoredUser> = withContext(Dispatchers.IO) {
+        val raw = prefs.getString(KEY_USERS, null) ?: return@withContext emptyList()
+        adapter.fromJson(raw).orEmpty()
     }
 
-    private fun saveUsers(users: List<StoredUser>) {
+    private suspend fun saveUsers(users: List<StoredUser>) = withContext(Dispatchers.IO) {
         val json = adapter.toJson(users)
         prefs.edit().putString(KEY_USERS, json).apply()
     }
 
-    private fun securePreferences(context: Context) = EncryptedSharedPreferences.create(
-        context,
-        PREFS_NAME,
-        MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
+    private suspend fun ensureLoginAttemptsLoaded() {
+        if (loginAttemptsLoaded) return
+        loginAttemptsMutex.withLock {
+            if (loginAttemptsLoaded) return
+            val stored = loadLoginAttempts()
+            stored.forEach { attempt ->
+                loginAttempts[attempt.username] = LoginAttempt(
+                    failCount = attempt.failCount,
+                    lastAttemptTime = attempt.lastAttemptTime,
+                    lockUntil = attempt.lockUntil
+                )
+            }
+            loginAttemptsLoaded = true
+        }
+    }
+
+    private suspend fun getLoginAttempt(username: String): LoginAttempt {
+        return loginAttempts[username] ?: LoginAttempt().also {
+            loginAttempts[username] = it
+            persistLoginAttempts()
+        }
+    }
+
+    private suspend fun loadLoginAttempts(): List<StoredLoginAttempt> = withContext(Dispatchers.IO) {
+        val raw = prefs.getString(KEY_LOGIN_ATTEMPTS, null) ?: return@withContext emptyList()
+        attemptAdapter.fromJson(raw).orEmpty()
+    }
+
+    private suspend fun persistLoginAttempts() = withContext(Dispatchers.IO) {
+        val stored = loginAttempts.map { (username, attempt) ->
+            StoredLoginAttempt(
+                username = username,
+                failCount = attempt.failCount,
+                lastAttemptTime = attempt.lastAttemptTime,
+                lockUntil = attempt.lockUntil
+            )
+        }
+        val json = attemptAdapter.toJson(stored)
+        prefs.edit().putString(KEY_LOGIN_ATTEMPTS, json).apply()
+    }
+
+    private fun securePreferences(context: Context): SharedPreferences {
+        val masterKey = runCatching {
+            MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .setRequestStrongBoxBacked(true)
+                .build()
+        }.getOrElse {
+            MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+        }
+        return EncryptedSharedPreferences.create(
+            context,
+            PREFS_NAME,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    }
 }
 
 /**
@@ -279,16 +353,8 @@ internal fun verifyPassword(password: String, storedHash: String): Boolean {
     if (parts[0] != Constants.Password.HASH_FORMAT_PREFIX) return false
     
     val iterations = parts[1].toIntOrNull() ?: return false
-    val salt = try {
-        Base64.getDecoder().decode(parts[2])
-    } catch (e: Exception) {
-        return false
-    }
-    val expectedHash = try {
-        Base64.getDecoder().decode(parts[3])
-    } catch (e: Exception) {
-        return false
-    }
+    val salt = runCatching { Base64.getDecoder().decode(parts[2]) }.getOrNull() ?: return false
+    val expectedHash = runCatching { Base64.getDecoder().decode(parts[3]) }.getOrNull() ?: return false
     
     // 使用相同的盐值和迭代次数计算哈希
     val spec = PBEKeySpec(password.toCharArray(), salt, iterations, 256)
@@ -335,3 +401,11 @@ private data class StoredUser(
 
 private const val PREFS_NAME = PrefsKeys.AUTH_PREFS_NAME
 private const val KEY_USERS = PrefsKeys.KEY_USERS
+private const val KEY_LOGIN_ATTEMPTS = PrefsKeys.KEY_LOGIN_ATTEMPTS
+
+private data class StoredLoginAttempt(
+    val username: String,
+    val failCount: Int,
+    val lastAttemptTime: Long,
+    val lockUntil: Long
+)

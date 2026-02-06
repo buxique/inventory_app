@@ -14,6 +14,7 @@ import java.io.File
 import org.mockito.kotlin.any
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.verify
+import org.mockito.kotlin.times
 import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -124,6 +125,7 @@ class SyncRepositoryTest {
     @Test
     fun `pushOperations should succeed with valid config`() = runTest {
         // Given
+        stubSnapshot()
         setupValidS3Config()
         val backupFile = File("backup.db")
         val uploadKey = "backup-123.db"
@@ -207,6 +209,7 @@ class SyncRepositoryTest {
     @Test
     fun `pullOperations should succeed with valid data`() = runTest {
         // Given
+        stubSnapshot()
         setupValidS3Config()
         val downloadedFile = File("downloaded.db")
         whenever(mockPrefs.getString("sync_last_key", "")).thenReturn("backup-123.db")
@@ -224,6 +227,7 @@ class SyncRepositoryTest {
     @Test
     fun `mergeOperations should pull then push`() = runTest {
         // Given
+        stubSnapshot()
         setupValidS3Config()
         val remoteFile = File("remote.db")
         val backupFile = File("backup.db")
@@ -240,7 +244,7 @@ class SyncRepositoryTest {
         
         // Then
         verify(mockStorageRepository).downloadBackup(any(), any())
-        verify(mockInventoryRepository).getAllItemsSnapshot()
+        verify(mockInventoryRepository, times(2)).getAllItemsSnapshot()
         verify(mockExportRepository).backupDatabase(null)
         verify(mockStorageRepository).uploadBackup(eq(backupFile), any())
         verify(mockEditor).putString("sync_last_key", newKey)
@@ -250,6 +254,7 @@ class SyncRepositoryTest {
     @Test
     fun `getSyncStatus should return correct status`() = runTest {
         // Given
+        stubSnapshot()
         whenever(mockPrefs.getString("sync_last_key", "")).thenReturn("test-key")
         whenever(mockPrefs.getLong("sync_last_push_at", 0L)).thenReturn(1000L)
         whenever(mockPrefs.getLong("sync_last_pull_at", 0L)).thenReturn(500L)
@@ -269,6 +274,7 @@ class SyncRepositoryTest {
     @Test
     fun `getSyncStatus should detect no conflict when merged`() = runTest {
         // Given
+        stubSnapshot()
         whenever(mockPrefs.getString("sync_last_key", "")).thenReturn("test-key")
         whenever(mockPrefs.getLong("sync_last_push_at", 0L)).thenReturn(1000L)
         whenever(mockPrefs.getLong("sync_last_pull_at", 0L)).thenReturn(500L)
@@ -309,6 +315,7 @@ class SyncRepositoryTest {
     @Test
     fun `resolveConflict with KeepLocal should push changes`() = runTest {
         // Given
+        stubSnapshot()
         setupValidS3Config()
         val localItem = InventoryItemEntity(
             id = 1L,
@@ -346,6 +353,7 @@ class SyncRepositoryTest {
     @Test
     fun `resolveConflict with KeepRemote should update local item`() = runTest {
         // Given
+        stubSnapshot()
         setupValidS3Config()
         val localItem = InventoryItemEntity(
             id = 1L,
@@ -397,5 +405,9 @@ class SyncRepositoryTest {
         whenever(mockPrefs.getString("s3_bucket", "")).thenReturn("test-bucket")
         whenever(mockPrefs.getString("s3_access_key", "")).thenReturn("access-key")
         whenever(mockPrefs.getString("s3_secret_key", "")).thenReturn("secret-key")
+    }
+
+    private suspend fun stubSnapshot() {
+        whenever(mockInventoryRepository.getAllItemsSnapshot()).thenReturn(emptyList())
     }
 }

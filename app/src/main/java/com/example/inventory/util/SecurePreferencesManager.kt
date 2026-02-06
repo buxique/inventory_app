@@ -49,10 +49,7 @@ object SecurePreferencesManager {
     
     private fun createSecurePreferences(context: Context): SharedPreferences {
         return try {
-            val masterKey = MasterKey.Builder(context)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            
+            val masterKey = createMasterKey(context)
             EncryptedSharedPreferences.create(
                 context,
                 PREFS_NAME,
@@ -66,6 +63,19 @@ object SecurePreferencesManager {
                 AppLogger.e("EncryptedSharedPreferences unavailable: ${e.message}", "Prefs", e)
             }
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        }
+    }
+
+    private fun createMasterKey(context: Context): MasterKey {
+        return try {
+            MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .setRequestStrongBoxBacked(true)
+                .build()
+        } catch (e: Exception) {
+            MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
         }
     }
 }
