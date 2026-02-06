@@ -27,28 +27,6 @@ object SecurityConfig {
      */
     const val LOGIN_ATTEMPT_WINDOW_MS = 5 * 60 * 1000L
     
-    // ==================== 密码策略 ====================
-    
-    /**
-     * 密码最小长度
-     */
-    const val PASSWORD_MIN_LENGTH = 10
-    
-    /**
-     * 密码哈希迭代次数
-     * 使用 PBKDF2WithHmacSHA256
-     */
-    const val PASSWORD_HASH_ITERATIONS = 100_000
-    
-    /**
-     * 密码哈希长度（位）
-     */
-    const val PASSWORD_HASH_LENGTH = 256
-    
-    /**
-     * 盐值长度（字节）
-     */
-    const val SALT_LENGTH = 32
 }
 
 /**
@@ -74,15 +52,3 @@ object SyncConfig {
 /**
  * 缓存配置常量
  */
-object CacheConfig {
-    /**
-     * 计算重试延迟时间（毫秒）
-     * 当检测到其他协程正在计算时的等待时间
-     */
-    const val COMPUTE_RETRY_DELAY_MS = 10L
-    
-    /**
-     * 最大重试次数
-     */
-    const val MAX_RETRY_COUNT = 100
-}

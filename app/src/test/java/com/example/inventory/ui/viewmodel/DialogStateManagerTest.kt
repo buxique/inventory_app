@@ -24,6 +24,7 @@ class DialogStateManagerTest {
     
     private val testItem = InventoryItemEntity(
         id = 1L,
+        listId = 1L,
         name = "测试商品",
         brand = "测试品牌",
         model = "测试型号",

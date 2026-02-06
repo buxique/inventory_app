@@ -93,25 +93,6 @@ object Constants {
         const val HASH_FORMAT_PREFIX = "pbkdf2_sha256"
     }
     
-    // ==================== SharedPreferences键名 ====================
-    object Prefs {
-        // 认证相关
-        const val AUTH_PREFS = "secure_auth"
-        const val KEY_USERS = "users"
-        
-        // 设置相关
-        const val SETTINGS_PREFS = "secure_settings"
-        const val KEY_S3_ENDPOINT = "s3_endpoint"
-        const val KEY_S3_REGION = "s3_region"
-        const val KEY_S3_BUCKET = "s3_bucket"
-        const val KEY_S3_ACCESS_KEY = "s3_access_key"
-        const val KEY_S3_SECRET_KEY = "s3_secret_key"
-        const val KEY_LAST_SYNC_KEY = "sync_last_key"
-        const val KEY_LAST_PUSH_AT = "sync_last_push_at"
-        const val KEY_LAST_PULL_AT = "sync_last_pull_at"
-        const val KEY_LAST_MERGE_AT = "sync_last_merge_at"
-    }
-    
     // ==================== 错误消息 ====================
     object ErrorMessage {
         const val S3_CONFIG_NOT_FOUND = "未配置S3"
@@ -143,6 +124,8 @@ object Constants {
         // 查询缓存
         const val QUERY_DEFAULT_MAX_SIZE = 100
         const val QUERY_DEFAULT_TTL_MILLIS = 5 * 60 * 1000L // 5分钟
+        const val QUERY_COMPUTE_RETRY_DELAY_MS = 10L
+        const val QUERY_COMPUTE_MAX_RETRY_COUNT = 100
 
         // 列表缓存
         const val ITEMS_CACHE_MAX_SIZE = 50

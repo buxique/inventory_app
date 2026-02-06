@@ -340,7 +340,7 @@ abstract class InventoryDatabase : RoomDatabase() {
 
         val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // Create categories table
+                // 创建分类表
                 db.execSQL("""
                     CREATE TABLE IF NOT EXISTS `categories` (
                         `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
@@ -356,7 +356,7 @@ abstract class InventoryDatabase : RoomDatabase() {
                 """)
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_categories_name` ON `categories` (`name`)")
 
-                // Create item_categories table
+                // 创建物品-分类关联表
                 db.execSQL("""
                     CREATE TABLE IF NOT EXISTS `item_categories` (
                         `itemId` INTEGER NOT NULL, 

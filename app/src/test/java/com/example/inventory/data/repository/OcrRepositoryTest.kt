@@ -7,10 +7,13 @@ import com.example.inventory.data.model.OcrResult
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
 import org.mockito.Mock
 import org.mockito.Mockito.*
 import org.mockito.MockitoAnnotations
 import org.junit.Assert.*
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.io.File
 
 /**
@@ -22,6 +25,8 @@ import java.io.File
  * - 结果合并逻辑
  * - 边界情况和异常处理
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [28])
 class OcrRepositoryTest {
     
     @Mock

@@ -17,9 +17,7 @@ import com.example.inventory.ui.theme.InventoryAppTheme
 import com.example.inventory.ui.viewmodel.AppViewModelFactory
 import com.example.inventory.util.PrefsKeys
 import com.example.inventory.util.settingsDataStore
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.runBlocking
 import java.util.Locale
 
 /**
@@ -60,9 +58,7 @@ class MainActivity : ComponentActivity() {
     }
     
     override fun attachBaseContext(newBase: Context) {
-        val languageCode = runBlocking {
-            newBase.settingsDataStore.data.first()[PrefsKeys.LANGUAGE_PREF_KEY] ?: "zh"
-        }
+        val languageCode = (application as? InventoryApplication)?.languageTag ?: "zh"
         
         val locale = when (languageCode) {
             "zh" -> Locale.SIMPLIFIED_CHINESE

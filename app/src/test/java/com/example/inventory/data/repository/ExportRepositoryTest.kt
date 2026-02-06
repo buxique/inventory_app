@@ -48,6 +48,7 @@ class ExportRepositoryTest {
         val items = listOf(
             InventoryItemEntity(
                 id = 1L,
+                listId = 1L,
                 name = "商品A",
                 brand = "品牌A",
                 model = "型号1",
@@ -58,6 +59,7 @@ class ExportRepositoryTest {
             ),
             InventoryItemEntity(
                 id = 2L,
+                listId = 1L,
                 name = "商品B",
                 brand = "品牌B",
                 model = "型号2",
@@ -112,6 +114,7 @@ class ExportRepositoryTest {
         val items = listOf(
             InventoryItemEntity(
                 id = 1L,
+                listId = 1L,
                 name = "商品,带逗号",
                 brand = "品牌\"带引号\"",
                 model = "型号\n带换行",
@@ -140,6 +143,7 @@ class ExportRepositoryTest {
         val items = listOf(
             InventoryItemEntity(
                 id = 1L,
+                listId = 1L,
                 name = "商品A",
                 brand = "品牌A",
                 model = "型号1",
@@ -259,6 +263,7 @@ class ExportRepositoryTest {
         val items = (1..50).map { i ->
             InventoryItemEntity(
                 id = i.toLong(),
+                listId = 1L,
                 name = "商品$i",
                 brand = "品牌",
                 model = "型号",

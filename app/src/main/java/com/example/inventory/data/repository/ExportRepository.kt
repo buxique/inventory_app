@@ -85,7 +85,7 @@ class ExportRepositoryImpl(
         
         val dir = context.getExternalFilesDir(null) ?: context.filesDir
         val file = File(dir, "inventory-${System.currentTimeMillis()}.xlsx")
-        val workbook = SXSSFWorkbook(100) // Keep 100 rows in memory, rest on disk
+        val workbook = SXSSFWorkbook(100) // 内存保留 100 行，其余写入磁盘
         
         try {
             val sheet = workbook.createSheet("Inventory")
@@ -125,7 +125,7 @@ class ExportRepositoryImpl(
             onProgress?.invoke(total, total, "导出完成")
             file
         } finally {
-            workbook.dispose() // Delete temporary files
+            workbook.dispose() // 删除临时文件
             workbook.close()
         }
     }

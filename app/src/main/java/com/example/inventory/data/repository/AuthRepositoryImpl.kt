@@ -3,6 +3,7 @@ package com.example.inventory.data.repository
 import android.content.Context
 import com.example.inventory.data.model.UserEntity
 import com.example.inventory.util.AppLogger
+import com.example.inventory.util.Constants
 import com.example.inventory.util.PrefsKeys
 import com.example.inventory.util.SecurityConfig
 import com.squareup.moshi.Moshi
@@ -238,19 +239,21 @@ class AuthRepositoryImpl(
  * - 256位哈希长度
  */
 internal fun hashPassword(password: String): String {
-    // 生成随机盐值（32字节）
-    val salt = ByteArray(32)
+    val salt = ByteArray(Constants.Password.SALT_LENGTH)
     SecureRandom().nextBytes(salt)
     
-    // 使用PBKDF2WithHmacSHA256进行哈希（100000次迭代）
-    val spec = PBEKeySpec(password.toCharArray(), salt, 100000, 256)
-    val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+    val spec = PBEKeySpec(
+        password.toCharArray(),
+        salt,
+        Constants.Password.PBKDF2_ITERATIONS,
+        Constants.Password.HASH_LENGTH
+    )
+    val factory = SecretKeyFactory.getInstance(Constants.Password.ALGORITHM)
     val hash = factory.generateSecret(spec).encoded
     
-    // 返回格式：algorithm$iterations$salt$hash
     val saltBase64 = Base64.getEncoder().encodeToString(salt)
     val hashBase64 = Base64.getEncoder().encodeToString(hash)
-    return "pbkdf2_sha256\$100000\$$saltBase64\$$hashBase64"
+    return "${Constants.Password.HASH_FORMAT_PREFIX}\$${Constants.Password.PBKDF2_ITERATIONS}\$$saltBase64\$$hashBase64"
 }
 
 /**
@@ -273,7 +276,7 @@ internal fun verifyPassword(password: String, storedHash: String): Boolean {
     
     val parts = storedHash.split("$")
     if (parts.size != 4) return false
-    if (parts[0] != "pbkdf2_sha256") return false
+    if (parts[0] != Constants.Password.HASH_FORMAT_PREFIX) return false
     
     val iterations = parts[1].toIntOrNull() ?: return false
     val salt = try {
@@ -289,7 +292,7 @@ internal fun verifyPassword(password: String, storedHash: String): Boolean {
     
     // 使用相同的盐值和迭代次数计算哈希
     val spec = PBEKeySpec(password.toCharArray(), salt, iterations, 256)
-    val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+    val factory = SecretKeyFactory.getInstance(Constants.Password.ALGORITHM)
     val testHash = factory.generateSecret(spec).encoded
     
     // 使用常量时间比较，防止时序攻击
@@ -313,7 +316,7 @@ internal fun verifyPassword(password: String, storedHash: String): Boolean {
  * - 不能包含用户名
  */
 internal fun isPasswordValid(password: String, username: String): Boolean {
-    if (password.length < SecurityConfig.PASSWORD_MIN_LENGTH) return false
+    if (password.length < Constants.Password.MIN_LENGTH) return false
     if (password.any { it.isWhitespace() }) return false
     val lower = password.any { it.isLowerCase() }
     val upper = password.any { it.isUpperCase() }

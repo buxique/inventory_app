@@ -162,7 +162,7 @@ fun CustomImagePicker(
 
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Header
+            // 顶部栏
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -214,7 +214,7 @@ fun CustomImagePicker(
                             onLongPress = { previewImage = image }
                         )
                     } else {
-                        // Placeholder
+                        // 占位项
                         Box(
                             modifier = Modifier
                                 .aspectRatio(1f)
@@ -226,7 +226,7 @@ fun CustomImagePicker(
         }
     }
 
-    // Preview Dialog
+    // 预览弹窗
     previewImage?.let { image ->
         Dialog(
             onDismissRequest = { previewImage = null },
@@ -244,14 +244,14 @@ fun CustomImagePicker(
                     contentScale = ContentScale.Fit
                 )
 
-                // Controls
+                // 操作按钮
                 Row(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(32.dp),
                     horizontalArrangement = Arrangement.spacedBy(48.dp)
                 ) {
-                    // Check (Select)
+                    // 选择按钮
                     IconButton(
                         onClick = {
                             if (!selectedUris.contains(image.uri)) {
@@ -266,7 +266,7 @@ fun CustomImagePicker(
                         Icon(Icons.Default.Check, contentDescription = "Select", tint = Color.White)
                     }
 
-                    // X (Cancel/Close Preview)
+                    // 关闭预览
                     IconButton(
                         onClick = { previewImage = null },
                         modifier = Modifier

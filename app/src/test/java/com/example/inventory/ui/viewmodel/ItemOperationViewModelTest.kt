@@ -33,11 +33,12 @@ class ItemOperationViewModelTest {
     
     private val testItem = InventoryItemEntity(
         id = 1L,
+        listId = 1L,
         name = "测试商品",
         brand = "测试品牌",
         model = "测试型号",
         parameters = "测试参数",
-        barcode = "123456",
+        barcode = "12345678",
         quantity = 10,
         remark = "测试备注"
     )
@@ -80,7 +81,7 @@ class ItemOperationViewModelTest {
     @Test
     fun `updateItem should return success`() = runTest {
         // Given
-        whenever(inventoryRepository.updateItem(any())).thenAnswer { }
+        whenever(inventoryRepository.updateItem(any())).thenReturn(1)
         
         // When
         val result = viewModel.updateItem(testItem)
@@ -94,7 +95,7 @@ class ItemOperationViewModelTest {
     fun `deleteItem should return success`() = runTest {
         // Given
         val itemId = 123L
-        whenever(inventoryRepository.deleteItem(itemId)).thenAnswer { }
+        whenever(inventoryRepository.deleteItem(itemId)).thenReturn(1)
         
         // When
         val result = viewModel.deleteItem(itemId)

@@ -10,6 +10,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.test.resetMain
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -36,6 +38,11 @@ class SearchHistoryRepositoryTest {
         Dispatchers.setMain(testDispatcher)
         repository = SearchHistoryRepositoryImpl(mockDao)
     }
+    
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
 
     @Test
     fun `recordSearch inserts new history when not exists`() = runTest {
@@ -43,6 +50,7 @@ class SearchHistoryRepositoryTest {
         val type = "text"
         whenever(mockDao.getSearchHistoryByQuery(query, type)).thenReturn(null)
         whenever(mockDao.insertSearchHistory(any())).thenReturn(1L)
+        whenever(mockDao.getSearchHistoryCount()).thenReturn(0)
 
         repository.recordSearch(query, type, 10)
 

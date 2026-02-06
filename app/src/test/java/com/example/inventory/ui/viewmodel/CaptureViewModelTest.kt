@@ -12,16 +12,19 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.test.resetMain
+import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.mockito.Mock
-import org.mockito.Mockito.*
 import org.mockito.MockitoAnnotations
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import com.example.inventory.data.model.OcrToken
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.whenever
 
 /**
  * CaptureViewModel单元测试
@@ -48,10 +51,15 @@ class CaptureViewModelTest {
         viewModel = CaptureViewModel(mockOcrRepository)
     }
     
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
+    
     @Test
     fun `runOcr should update state with OCR results on success`() = runTest {
         // Given
-        val mockFile = mock(File::class.java)
+        val mockFile = mock<File>()
         val expectedResult = OcrResult(
             listOf(
                 OcrGroup("group1", listOf(OcrToken("商品名称: 测试商品", 0.95f)), 0.95f),
@@ -61,9 +69,9 @@ class CaptureViewModelTest {
         val localResult = OcrResult(expectedResult.groups)
         val onlineResult = OcrResult(emptyList())
 
-        `when`(mockOcrRepository.recognizeLocal(mockFile)).thenReturn(localResult)
-        `when`(mockOcrRepository.recognizeOnline(mockFile)).thenReturn(onlineResult)
-        `when`(mockOcrRepository.mergeResults(localResult, onlineResult)).thenReturn(expectedResult)
+        whenever(mockOcrRepository.recognizeLocal(mockFile)).thenReturn(localResult)
+        whenever(mockOcrRepository.recognizeOnline(mockFile)).thenReturn(onlineResult)
+        whenever(mockOcrRepository.mergeResults(localResult, onlineResult)).thenReturn(expectedResult)
         
         // When
         viewModel.runOcr(mockFile)
@@ -78,23 +86,18 @@ class CaptureViewModelTest {
     @Test
     fun `runOcr should update state with error on failure`() = runTest {
         // Given
-        val mockFile = mock(File::class.java)
+        val mockFile = mock<File>()
         val errorMessage = "识别失败"
-        `when`(mockOcrRepository.recognizeLocal(mockFile)).thenThrow(RuntimeException(errorMessage))
+        whenever(mockOcrRepository.recognizeLocal(mockFile)).thenThrow(RuntimeException(errorMessage))
         
         // When
         viewModel.runOcr(mockFile)
         advanceUntilIdle()
         
         // Then
-        // Note: ViewModel currently doesn't catch exception in runOcr launch block effectively for state update if not handled
-        // Assuming implementation handles it or we check if it crashes?
-        // Actually runOcr uses viewModelScope.launch. If exception, it crashes test.
-        // We should verify if runOcr handles exceptions.
-        // Looking at ViewModel code, it does NOT try-catch.
-        // So this test expects a crash or we should add try-catch in ViewModel.
-        // For now, let's skip this test or fix ViewModel.
-        // But user asked to validate fixes.
+        val state = viewModel.state.value
+        assertTrue(state.processingState is ProcessingState.Error)
+        assertEquals(errorMessage, (state.processingState as ProcessingState.Error).message)
     }
     
     @Test
@@ -141,7 +144,7 @@ class CaptureViewModelTest {
     }
     
     @Test
-    fun `clearSelection should remove all selected groups`() {
+    fun `mergeSelectedGroups should clear selection`() {
         // Given
         val group1 = OcrGroup("group-1", listOf(OcrToken("test", 0.9f)), 0.9f)
         val group2 = OcrGroup("group-2", listOf(OcrToken("test", 0.9f)), 0.9f)
@@ -149,16 +152,10 @@ class CaptureViewModelTest {
         viewModel.toggleGroupSelection(group2)
         
         // When
-        // CaptureViewModel currently doesn't have clearSelection method?
-        // Let's check the code.
-        // It has splitSelectedGroups, mergeSelectedGroups.
-        // It doesn't seem to have clearSelection exposed.
-        // But the previous test code called `viewModel.clearSelection()`.
-        // Let's check CaptureViewModel again.
-        // It has `_state.update { it.copy(selectedGroupIds = emptySet()) }` in merge/split.
-        // But no explicit clearSelection.
-        // So I should remove this test too if the method doesn't exist.
-        // Or implement it.
-        // I will remove the test for now to make it compile.
+        viewModel.mergeSelectedGroups()
+        
+        // Then
+        val state = viewModel.state.value
+        assertTrue(state.selectedGroupIds.isEmpty())
     }
 }

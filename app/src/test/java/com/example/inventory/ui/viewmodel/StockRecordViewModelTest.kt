@@ -4,9 +4,15 @@ import com.example.inventory.data.model.InventoryItemEntity
 import com.example.inventory.data.model.StockRecordEntity
 import com.example.inventory.data.repository.InventoryRepository
 import com.example.inventory.ui.state.StockAction
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.test.resetMain
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -15,6 +21,7 @@ import org.junit.Test
 import org.mockito.Mock
 import org.mockito.MockitoAnnotations
 import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 
@@ -30,14 +37,16 @@ class StockRecordViewModelTest {
     private lateinit var inventoryRepository: InventoryRepository
     
     private lateinit var viewModel: StockRecordViewModel
+    private val testDispatcher = StandardTestDispatcher()
     
     private val testItem = InventoryItemEntity(
         id = 1L,
+        listId = 1L,
         name = "测试商品",
         brand = "测试品牌",
         model = "测试型号",
         parameters = "测试参数",
-        barcode = "123456",
+        barcode = "12345678",
         quantity = 100,
         remark = "测试备注"
     )
@@ -64,7 +73,13 @@ class StockRecordViewModelTest {
     @Before
     fun setup() {
         MockitoAnnotations.openMocks(this)
+        Dispatchers.setMain(testDispatcher)
         viewModel = StockRecordViewModel(inventoryRepository)
+    }
+    
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
     }
     
     @Test
@@ -75,6 +90,7 @@ class StockRecordViewModelTest {
         
         // When
         viewModel.loadRecords(itemId)
+        advanceUntilIdle()
         
         // Then
         assertEquals(testRecords, viewModel.records.first())
@@ -89,6 +105,7 @@ class StockRecordViewModelTest {
         
         // When
         viewModel.loadRecords(itemId)
+        advanceUntilIdle()
         
         // Then - 验证加载完成后 loading 为 false
         assertFalse(viewModel.isLoading.first())
@@ -100,7 +117,9 @@ class StockRecordViewModelTest {
         val quantity = 50
         val operatorName = "张三"
         val remark = "入库测试"
+        val expectedUpdated = testItem.copy(quantity = 150)
         whenever(inventoryRepository.getRecords(testItem.id)).thenReturn(testRecords)
+        whenever(inventoryRepository.updateItemWithRecord(any(), any(), any())).thenReturn(expectedUpdated)
         
         // When
         val result = viewModel.addRecord(
@@ -117,19 +136,22 @@ class StockRecordViewModelTest {
         assertEquals(150, updatedItem.quantity) // 100 + 50
         
         // 验证更新商品
-        verify(inventoryRepository).updateItem(
-            org.mockito.kotlin.argThat { item -> item.quantity == 150 }
+        val itemCaptor = argumentCaptor<InventoryItemEntity>()
+        val changeCaptor = argumentCaptor<Int>()
+        val recordCaptor = argumentCaptor<StockRecordEntity>()
+        verify(inventoryRepository).updateItemWithRecord(
+            itemCaptor.capture(),
+            changeCaptor.capture(),
+            recordCaptor.capture()
         )
+        assertEquals(testItem.id, itemCaptor.firstValue.id)
+        assertEquals(testItem.quantity, itemCaptor.firstValue.quantity)
+        assertEquals(50, changeCaptor.firstValue)
+        assertEquals(50, recordCaptor.firstValue.change)
+        assertEquals(operatorName, recordCaptor.firstValue.operatorName)
+        assertEquals(remark, recordCaptor.firstValue.remark)
         
-        // 验证添加记录
-        verify(inventoryRepository).addRecord(
-            org.mockito.kotlin.argThat { record ->
-                record.itemId == testItem.id && 
-                record.change == 50 && 
-                record.operatorName == operatorName &&
-                record.remark == remark
-            }
-        )
+        advanceUntilIdle()
     }
     
     @Test
@@ -138,7 +160,9 @@ class StockRecordViewModelTest {
         val quantity = 30
         val operatorName = "李四"
         val remark = "出库测试"
+        val expectedUpdated = testItem.copy(quantity = 70)
         whenever(inventoryRepository.getRecords(testItem.id)).thenReturn(testRecords)
+        whenever(inventoryRepository.updateItemWithRecord(any(), any(), any())).thenReturn(expectedUpdated)
         
         // When
         val result = viewModel.addRecord(
@@ -155,9 +179,19 @@ class StockRecordViewModelTest {
         assertEquals(70, updatedItem.quantity) // 100 - 30
         
         // 验证添加记录时 change 为负数
-        verify(inventoryRepository).addRecord(
-            org.mockito.kotlin.argThat { record -> record.change == -30 }
+        val itemCaptor = argumentCaptor<InventoryItemEntity>()
+        val changeCaptor = argumentCaptor<Int>()
+        val recordCaptor = argumentCaptor<StockRecordEntity>()
+        verify(inventoryRepository).updateItemWithRecord(
+            itemCaptor.capture(),
+            changeCaptor.capture(),
+            recordCaptor.capture()
         )
+        assertEquals(testItem.id, itemCaptor.firstValue.id)
+        assertEquals(testItem.quantity, itemCaptor.firstValue.quantity)
+        assertEquals(-30, changeCaptor.firstValue)
+        assertEquals(-30, recordCaptor.firstValue.change)
+        advanceUntilIdle()
     }
     
     @Test
@@ -166,7 +200,9 @@ class StockRecordViewModelTest {
         val quantity = 50
         val operatorName = "王五"
         val remark = "盘点测试"
+        val expectedUpdated = testItem.copy(quantity = 100)
         whenever(inventoryRepository.getRecords(testItem.id)).thenReturn(testRecords)
+        whenever(inventoryRepository.updateItemWithRecord(any(), any(), any())).thenReturn(expectedUpdated)
         
         // When
         val result = viewModel.addRecord(
@@ -183,9 +219,19 @@ class StockRecordViewModelTest {
         assertEquals(100, updatedItem.quantity) // 数量不变
         
         // 验证添加记录时 change 为 0
-        verify(inventoryRepository).addRecord(
-            org.mockito.kotlin.argThat { record -> record.change == 0 }
+        val itemCaptor = argumentCaptor<InventoryItemEntity>()
+        val changeCaptor = argumentCaptor<Int>()
+        val recordCaptor = argumentCaptor<StockRecordEntity>()
+        verify(inventoryRepository).updateItemWithRecord(
+            itemCaptor.capture(),
+            changeCaptor.capture(),
+            recordCaptor.capture()
         )
+        assertEquals(testItem.id, itemCaptor.firstValue.id)
+        assertEquals(testItem.quantity, itemCaptor.firstValue.quantity)
+        assertEquals(0, changeCaptor.firstValue)
+        assertEquals(0, recordCaptor.firstValue.change)
+        advanceUntilIdle()
     }
     
     @Test
@@ -265,6 +311,8 @@ class StockRecordViewModelTest {
         val operatorName = "  张三  "
         val remark = "  测试备注  "
         whenever(inventoryRepository.getRecords(testItem.id)).thenReturn(testRecords)
+        whenever(inventoryRepository.updateItemWithRecord(any(), any(), any()))
+            .thenReturn(testItem.copy(quantity = 110))
         
         // When
         viewModel.addRecord(
@@ -276,17 +324,22 @@ class StockRecordViewModelTest {
         )
         
         // Then
-        verify(inventoryRepository).addRecord(
+        verify(inventoryRepository).updateItemWithRecord(
+            org.mockito.kotlin.argThat { id == testItem.id && quantity == testItem.quantity },
+            org.mockito.kotlin.eq(10),
             org.mockito.kotlin.argThat { record ->
                 record.operatorName == "张三" && record.remark == "测试备注"
             }
         )
+        advanceUntilIdle()
     }
     
     @Test
     fun `addRecord should reload records after success`() = runTest {
         // Given
         whenever(inventoryRepository.getRecords(testItem.id)).thenReturn(testRecords)
+        whenever(inventoryRepository.updateItemWithRecord(any(), any(), any()))
+            .thenReturn(testItem.copy(quantity = 110))
         
         // When
         viewModel.addRecord(
@@ -296,6 +349,7 @@ class StockRecordViewModelTest {
             operatorName = "张三",
             remark = "测试"
         )
+        advanceUntilIdle()
         
         // Then
         verify(inventoryRepository).getRecords(testItem.id)
@@ -306,7 +360,7 @@ class StockRecordViewModelTest {
     fun `addRecord with repository exception should return failure`() = runTest {
         // Given
         val exception = RuntimeException("数据库错误")
-        whenever(inventoryRepository.updateItem(any())).thenThrow(exception)
+        whenever(inventoryRepository.updateItemWithRecord(any(), any(), any())).thenThrow(exception)
         
         // When
         val result = viewModel.addRecord(
@@ -327,6 +381,7 @@ class StockRecordViewModelTest {
         // Given
         whenever(inventoryRepository.getRecords(any())).thenReturn(testRecords)
         viewModel.loadRecords(1L)
+        advanceUntilIdle()
         assertEquals(testRecords, viewModel.records.first())
         
         // When
@@ -348,6 +403,8 @@ class StockRecordViewModelTest {
         // Given - 商品库存为 10
         val lowStockItem = testItem.copy(quantity = 10)
         whenever(inventoryRepository.getRecords(lowStockItem.id)).thenReturn(testRecords)
+        whenever(inventoryRepository.updateItemWithRecord(any(), any(), any()))
+            .thenReturn(lowStockItem.copy(quantity = 0))
         
         // When - 出库 10
         val result = viewModel.addRecord(
@@ -363,5 +420,6 @@ class StockRecordViewModelTest {
         val updatedItem = result.getOrNull()!!
         assertEquals(0, updatedItem.quantity)
         assertTrue(updatedItem.quantity >= 0)
+        advanceUntilIdle()
     }
 }

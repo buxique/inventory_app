@@ -2,9 +2,15 @@ package com.example.inventory.ui.viewmodel
 
 import com.example.inventory.data.model.CategoryEntity
 import com.example.inventory.data.repository.CategoryRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.test.resetMain
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -13,6 +19,7 @@ import org.junit.Test
 import org.mockito.Mock
 import org.mockito.MockitoAnnotations
 import org.mockito.kotlin.any
+import org.mockito.kotlin.clearInvocations
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 
@@ -28,6 +35,7 @@ class CategoryViewModelTest {
     private lateinit var categoryRepository: CategoryRepository
     
     private lateinit var viewModel: CategoryViewModel
+    private val testDispatcher = StandardTestDispatcher()
     
     private val testCategories = listOf(
         CategoryEntity(id = 1L, name = "电子产品"),
@@ -38,6 +46,7 @@ class CategoryViewModelTest {
     @Before
     fun setup() {
         MockitoAnnotations.openMocks(this)
+        Dispatchers.setMain(testDispatcher)
         
         // Mock repository 返回测试数据
         runTest {
@@ -47,11 +56,17 @@ class CategoryViewModelTest {
         viewModel = CategoryViewModel(categoryRepository)
     }
     
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
+    
     @Test
     fun `init should load categories automatically`() = runTest {
         // Given - setup 中已初始化
         
         // Then - 验证自动加载
+        advanceUntilIdle()
         verify(categoryRepository).getAllCategories()
         assertEquals(testCategories, viewModel.categories.first())
     }
@@ -67,6 +82,7 @@ class CategoryViewModelTest {
         
         // When
         viewModel.loadCategories()
+        advanceUntilIdle()
         
         // Then
         assertEquals(newCategories, viewModel.categories.first())
@@ -79,6 +95,7 @@ class CategoryViewModelTest {
         
         // When
         viewModel.loadCategories()
+        advanceUntilIdle()
         
         // Then - 验证加载完成后 loading 为 false
         assertFalse(viewModel.isLoading.first())
@@ -91,6 +108,7 @@ class CategoryViewModelTest {
         
         // When
         val result = viewModel.addCategory(categoryName)
+        advanceUntilIdle()
         
         // Then
         assertTrue(result)
@@ -123,6 +141,7 @@ class CategoryViewModelTest {
         
         // When
         viewModel.addCategory(nameWithSpaces)
+        advanceUntilIdle()
         
         // Then
         verify(categoryRepository).addCategory(
@@ -150,6 +169,7 @@ class CategoryViewModelTest {
         
         // When
         val result = viewModel.deleteCategory(categoryId)
+        advanceUntilIdle()
         
         // Then
         assertTrue(result)
@@ -174,7 +194,9 @@ class CategoryViewModelTest {
     fun `initial state should have empty categories`() = runTest {
         // Given - 创建新的 ViewModel，不自动加载
         whenever(categoryRepository.getAllCategories()).thenReturn(emptyList())
+        clearInvocations(categoryRepository)
         val newViewModel = CategoryViewModel(categoryRepository)
+        advanceUntilIdle()
         
         // Then - 初始化后应该调用加载
         verify(categoryRepository).getAllCategories()
@@ -190,14 +212,17 @@ class CategoryViewModelTest {
         // When & Then
         whenever(categoryRepository.getAllCategories()).thenReturn(categories1)
         viewModel.loadCategories()
+        advanceUntilIdle()
         assertEquals(categories1, viewModel.categories.first())
         
         whenever(categoryRepository.getAllCategories()).thenReturn(categories2)
         viewModel.loadCategories()
+        advanceUntilIdle()
         assertEquals(categories2, viewModel.categories.first())
         
         whenever(categoryRepository.getAllCategories()).thenReturn(categories3)
         viewModel.loadCategories()
+        advanceUntilIdle()
         assertEquals(categories3, viewModel.categories.first())
     }
 }

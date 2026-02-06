@@ -1,7 +1,6 @@
 package com.example.inventory.util
 
 import androidx.collection.LruCache
-import com.example.inventory.util.CacheConfig
 import com.example.inventory.util.Constants
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -157,11 +156,11 @@ class QueryCache<T : Any> private constructor(
         // 检查是否有其他协程正在计算
         var retryCount = 0
         while (!computingKeys.add(key)) {
-            if (retryCount++ > CacheConfig.MAX_RETRY_COUNT) {
+            if (retryCount++ > Constants.Cache.QUERY_COMPUTE_MAX_RETRY_COUNT) {
                 // 超过最大重试次数，直接计算
                 break
             }
-            delay(CacheConfig.COMPUTE_RETRY_DELAY_MS)
+            delay(Constants.Cache.QUERY_COMPUTE_RETRY_DELAY_MS)
             mutex.withLock {
                 val entry = cache.get(key)
                 if (entry != null && !entry.isExpired()) {

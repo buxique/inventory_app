@@ -62,7 +62,7 @@ fun CaptureScreen(
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
 
-    // Camera & Permissions
+    // 相机与权限
     val imageCapture = remember { ImageCapture.Builder().build() }
     val cameraExecutor = remember { ContextCompat.getMainExecutor(context) }
     var hasCameraPermission by remember { mutableStateOf(false) }
@@ -109,13 +109,13 @@ fun CaptureScreen(
         imageContainerOrigin.value = Offset.Zero
     }
 
-    // Edit mode state
+    // 编辑模式状态
     var isEditMode by remember { mutableStateOf(false) }
     
-    // Highlighted cell for drop target
+    // 拖拽目标高亮单元格
     var highlightedCell by remember { mutableStateOf<Pair<Long, String>?>(null) }
     
-    // Active Attribute Selection (Name, Brand, Model, Specs, Quantity)
+    // 当前属性选择（品名、品牌、型号、规格、数量）
     val attributes = remember { listOf(
         "name" to "品名",
         "brand" to "品牌",
@@ -126,7 +126,7 @@ fun CaptureScreen(
     var currentAttributeIndex by remember { mutableIntStateOf(0) }
     val activeAttribute = attributes[currentAttributeIndex].first
     
-    // Dragging state for UI visibility toggle
+    // 用于控制可见性的拖拽状态
     var isDragging by remember { mutableStateOf(false) }
 
     val tableState = rememberLazyListState()

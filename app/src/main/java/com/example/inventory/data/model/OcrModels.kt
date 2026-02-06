@@ -3,14 +3,14 @@ package com.example.inventory.data.model
 data class OcrToken(
     val text: String,
     val confidence: Float,
-    val box: List<Float> = emptyList() // [left, top, right, bottom] normalized 0..1 or absolute
+    val box: List<Float> = emptyList() // [left, top, right, bottom]，归一化 0..1 或像素坐标
 )
 
 data class OcrGroup(
     val id: String,
     val tokens: List<OcrToken>,
     val confidence: Float,
-    val box: List<Float> = emptyList() // Bounding box of the group
+    val box: List<Float> = emptyList() // 分组的边界框
 )
 
 data class OcrResult(

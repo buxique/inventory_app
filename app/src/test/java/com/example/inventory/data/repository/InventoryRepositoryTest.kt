@@ -5,20 +5,26 @@ import com.example.inventory.data.db.CategoryDao
 import com.example.inventory.data.db.InventoryDao
 import com.example.inventory.data.model.InventoryItemEntity
 import com.example.inventory.data.model.StockRecordEntity
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
 import org.mockito.Mock
 import org.mockito.Mockito.*
 import org.mockito.MockitoAnnotations
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * InventoryRepository 单元测试
  * 
  * 测试 InventoryRepositoryImpl 的基本功能
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [28])
 class InventoryRepositoryTest {
     
     @Mock
@@ -43,10 +49,9 @@ class InventoryRepositoryTest {
         `when`(mockDao.getAllItems()).thenReturn(mockPagingSource)
         
         // When
-        val result = repository.getItems()
+        repository.getItems().first()
         
         // Then
-        assertNotNull(result)
         verify(mockDao).getAllItems()
     }
     
@@ -54,6 +59,7 @@ class InventoryRepositoryTest {
     fun `addItem should call dao insert`() = runTest {
         // Given
         val item = InventoryItemEntity(
+            listId = 1L,
             name = "新商品",
             brand = "品牌",
             model = "型号",
@@ -63,14 +69,23 @@ class InventoryRepositoryTest {
             remark = ""
         )
         val expectedId = 1L
-        `when`(mockDao.insertItem(item)).thenReturn(expectedId)
+        `when`(mockDao.insertItem(org.mockito.kotlin.any())).thenReturn(expectedId)
         
         // When
         val result = repository.addItem(item)
         
         // Then
         assertEquals(expectedId, result)
-        verify(mockDao).insertItem(item)
+        verify(mockDao).insertItem(
+            org.mockito.kotlin.argThat {
+                listId == 1L &&
+                    name == "新商品" &&
+                    brand == "品牌" &&
+                    model == "型号" &&
+                    quantity == 0 &&
+                    lastModified > 0L
+            }
+        )
     }
     
     @Test
@@ -78,6 +93,7 @@ class InventoryRepositoryTest {
         // Given
         val item = InventoryItemEntity(
             id = 1L,
+            listId = 1L,
             name = "更新商品",
             brand = "品牌",
             model = "型号",
@@ -91,7 +107,15 @@ class InventoryRepositoryTest {
         repository.updateItem(item)
         
         // Then
-        verify(mockDao).updateItem(item)
+        verify(mockDao).updateItem(
+            org.mockito.kotlin.argThat {
+                id == 1L &&
+                    listId == 1L &&
+                    name == "更新商品" &&
+                    quantity == 10 &&
+                    lastModified > 0L
+            }
+        )
     }
     
     @Test
@@ -148,6 +172,7 @@ class InventoryRepositoryTest {
         val expectedItems = listOf(
             InventoryItemEntity(
                 id = 1,
+                listId = 1L,
                 name = "商品1",
                 brand = "品牌A",
                 model = "型号A",
@@ -158,6 +183,7 @@ class InventoryRepositoryTest {
             ),
             InventoryItemEntity(
                 id = 2,
+                listId = 1L,
                 name = "商品2",
                 brand = "品牌B",
                 model = "型号B",

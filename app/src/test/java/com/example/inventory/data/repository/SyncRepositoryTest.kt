@@ -3,15 +3,20 @@ package com.example.inventory.data.repository
 import android.content.Context
 import android.content.SharedPreferences
 import com.example.inventory.data.model.InventoryItemEntity
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
 import org.mockito.Mock
-import org.mockito.Mockito.*
 import org.mockito.MockitoAnnotations
 import org.junit.Assert.*
 import java.io.File
+import org.mockito.kotlin.any
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * SyncRepository 单元测试
@@ -24,6 +29,8 @@ import java.io.File
  * - 同步状态管理
  * - 异常处理
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [28])
 class SyncRepositoryTest {
     
     @Mock
@@ -49,24 +56,25 @@ class SyncRepositoryTest {
     @Before
     fun setup() {
         MockitoAnnotations.openMocks(this)
-        `when`(mockContext.applicationContext).thenReturn(mockContext)
-        `when`(mockEditor.putString(anyString(), anyString())).thenReturn(mockEditor)
-        `when`(mockEditor.putLong(anyString(), anyLong())).thenReturn(mockEditor)
-        `when`(mockEditor.apply()).then { }
-        `when`(mockPrefs.edit()).thenReturn(mockEditor)
+        whenever(mockContext.applicationContext).thenReturn(mockContext)
+        whenever(mockEditor.putString(any(), any())).thenReturn(mockEditor)
+        whenever(mockEditor.putLong(any(), any())).thenReturn(mockEditor)
+        whenever(mockEditor.apply()).then { }
+        whenever(mockPrefs.edit()).thenReturn(mockEditor)
         
         repository = SyncRepositoryImpl(
             mockContext,
             mockExportRepository,
             mockStorageRepository,
-            mockInventoryRepository
+            mockInventoryRepository,
+            prefsProvider = { mockPrefs }
         )
     }
     
     @Test
     fun `pushOperations should fail when S3 not configured`() = runTest {
         // Given
-        `when`(mockPrefs.getString("s3_endpoint", "")).thenReturn("")
+        whenever(mockPrefs.getString("s3_endpoint", "")).thenReturn("")
         
         // When & Then
         try {
@@ -81,7 +89,9 @@ class SyncRepositoryTest {
     fun `pushOperations should fail when backup fails`() = runTest {
         // Given
         setupValidS3Config()
-        `when`(mockExportRepository.backupDatabase(null)).thenReturn(null)
+        whenever(mockInventoryRepository.getMaxLastModified()).thenReturn(1L)
+        whenever(mockPrefs.getLong("sync_last_push_at", 0L)).thenReturn(0L)
+        whenever(mockExportRepository.backupDatabase(null)).thenReturn(null)
         
         // When & Then
         try {
@@ -97,8 +107,10 @@ class SyncRepositoryTest {
         // Given
         setupValidS3Config()
         val backupFile = File("backup.db")
-        `when`(mockExportRepository.backupDatabase(null)).thenReturn(backupFile)
-        `when`(mockStorageRepository.uploadBackup(any(), any())).thenReturn(null)
+        whenever(mockInventoryRepository.getMaxLastModified()).thenReturn(1L)
+        whenever(mockPrefs.getLong("sync_last_push_at", 0L)).thenReturn(0L)
+        whenever(mockExportRepository.backupDatabase(null)).thenReturn(backupFile)
+        whenever(mockStorageRepository.uploadBackup(any(), any())).thenReturn(null)
         
         // When & Then
         try {
@@ -115,22 +127,24 @@ class SyncRepositoryTest {
         setupValidS3Config()
         val backupFile = File("backup.db")
         val uploadKey = "backup-123.db"
-        `when`(mockExportRepository.backupDatabase(null)).thenReturn(backupFile)
-        `when`(mockStorageRepository.uploadBackup(any(), any())).thenReturn(uploadKey)
+        whenever(mockInventoryRepository.getMaxLastModified()).thenReturn(1L)
+        whenever(mockPrefs.getLong("sync_last_push_at", 0L)).thenReturn(0L)
+        whenever(mockExportRepository.backupDatabase(null)).thenReturn(backupFile)
+        whenever(mockStorageRepository.uploadBackup(any(), any())).thenReturn(uploadKey)
         
         // When
         repository.pushOperations()
         
         // Then
         verify(mockEditor).putString("sync_last_key", uploadKey)
-        verify(mockEditor).putLong(eq("sync_last_push_at"), anyLong())
+        verify(mockEditor).putLong(eq("sync_last_push_at"), any())
         verify(mockEditor).apply()
     }
     
     @Test
     fun `pullOperations should fail when S3 not configured`() = runTest {
         // Given
-        `when`(mockPrefs.getString("s3_endpoint", "")).thenReturn("")
+        whenever(mockPrefs.getString("s3_endpoint", "")).thenReturn("")
         
         // When & Then
         try {
@@ -145,7 +159,7 @@ class SyncRepositoryTest {
     fun `pullOperations should fail when no sync record exists`() = runTest {
         // Given
         setupValidS3Config()
-        `when`(mockPrefs.getString("sync_last_key", "")).thenReturn("")
+        whenever(mockPrefs.getString("sync_last_key", "")).thenReturn("")
         
         // When & Then
         try {
@@ -160,8 +174,8 @@ class SyncRepositoryTest {
     fun `pullOperations should fail when download fails`() = runTest {
         // Given
         setupValidS3Config()
-        `when`(mockPrefs.getString("sync_last_key", "")).thenReturn("backup-123.db")
-        `when`(mockStorageRepository.downloadBackup(anyString(), any())).thenReturn(null)
+        whenever(mockPrefs.getString("sync_last_key", "")).thenReturn("backup-123.db")
+        whenever(mockStorageRepository.downloadBackup(any(), any())).thenReturn(null)
         
         // When & Then
         try {
@@ -177,9 +191,9 @@ class SyncRepositoryTest {
         // Given
         setupValidS3Config()
         val downloadedFile = File("downloaded.db")
-        `when`(mockPrefs.getString("sync_last_key", "")).thenReturn("backup-123.db")
-        `when`(mockStorageRepository.downloadBackup(anyString(), any())).thenReturn(downloadedFile)
-        `when`(mockExportRepository.restoreDatabase(downloadedFile, null)).thenReturn(false)
+        whenever(mockPrefs.getString("sync_last_key", "")).thenReturn("backup-123.db")
+        whenever(mockStorageRepository.downloadBackup(any(), any())).thenReturn(downloadedFile)
+        whenever(mockExportRepository.restoreDatabase(downloadedFile, null)).thenReturn(false)
         
         // When & Then
         try {
@@ -195,15 +209,15 @@ class SyncRepositoryTest {
         // Given
         setupValidS3Config()
         val downloadedFile = File("downloaded.db")
-        `when`(mockPrefs.getString("sync_last_key", "")).thenReturn("backup-123.db")
-        `when`(mockStorageRepository.downloadBackup(anyString(), any())).thenReturn(downloadedFile)
-        `when`(mockExportRepository.restoreDatabase(downloadedFile, null)).thenReturn(true)
+        whenever(mockPrefs.getString("sync_last_key", "")).thenReturn("backup-123.db")
+        whenever(mockStorageRepository.downloadBackup(any(), any())).thenReturn(downloadedFile)
+        whenever(mockExportRepository.restoreDatabase(downloadedFile, null)).thenReturn(true)
         
         // When
         repository.pullOperations()
         
         // Then
-        verify(mockEditor).putLong(eq("sync_last_pull_at"), anyLong())
+        verify(mockEditor).putLong(eq("sync_last_pull_at"), any())
         verify(mockEditor).apply()
     }
     
@@ -215,31 +229,31 @@ class SyncRepositoryTest {
         val backupFile = File("backup.db")
         val newKey = "merged-123.db"
         
-        `when`(mockPrefs.getString("sync_last_key", "")).thenReturn("old-key.db")
-        `when`(mockStorageRepository.downloadBackup(anyString(), any())).thenReturn(remoteFile)
-        `when`(mockExportRepository.restoreDatabase(remoteFile, null)).thenReturn(true)
-        `when`(mockExportRepository.backupDatabase(null)).thenReturn(backupFile)
-        `when`(mockStorageRepository.uploadBackup(any(), any())).thenReturn(newKey)
+        whenever(mockPrefs.getString("sync_last_key", "")).thenReturn("old-key.db")
+        whenever(mockStorageRepository.downloadBackup(any(), any())).thenReturn(remoteFile)
+        whenever(mockExportRepository.backupDatabase(null)).thenReturn(backupFile)
+        whenever(mockStorageRepository.uploadBackup(any(), any())).thenReturn(newKey)
+        whenever(mockInventoryRepository.getAllItemsSnapshot()).thenReturn(emptyList())
         
         // When
         repository.mergeOperations()
         
         // Then
-        verify(mockStorageRepository).downloadBackup(anyString(), any())
-        verify(mockExportRepository).restoreDatabase(remoteFile, null)
+        verify(mockStorageRepository).downloadBackup(any(), any())
+        verify(mockInventoryRepository).getAllItemsSnapshot()
         verify(mockExportRepository).backupDatabase(null)
-        verify(mockStorageRepository).uploadBackup(backupFile, any())
+        verify(mockStorageRepository).uploadBackup(eq(backupFile), any())
         verify(mockEditor).putString("sync_last_key", newKey)
-        verify(mockEditor).putLong(eq("sync_last_merge_at"), anyLong())
+        verify(mockEditor).putLong(eq("sync_last_merge_at"), any())
     }
     
     @Test
     fun `getSyncStatus should return correct status`() = runTest {
         // Given
-        `when`(mockPrefs.getString("sync_last_key", "")).thenReturn("test-key")
-        `when`(mockPrefs.getLong("sync_last_push_at", 0L)).thenReturn(1000L)
-        `when`(mockPrefs.getLong("sync_last_pull_at", 0L)).thenReturn(500L)
-        `when`(mockPrefs.getLong("sync_last_merge_at", 0L)).thenReturn(0L)
+        whenever(mockPrefs.getString("sync_last_key", "")).thenReturn("test-key")
+        whenever(mockPrefs.getLong("sync_last_push_at", 0L)).thenReturn(1000L)
+        whenever(mockPrefs.getLong("sync_last_pull_at", 0L)).thenReturn(500L)
+        whenever(mockPrefs.getLong("sync_last_merge_at", 0L)).thenReturn(0L)
         
         // When
         val status = repository.getSyncStatus()
@@ -255,10 +269,10 @@ class SyncRepositoryTest {
     @Test
     fun `getSyncStatus should detect no conflict when merged`() = runTest {
         // Given
-        `when`(mockPrefs.getString("sync_last_key", "")).thenReturn("test-key")
-        `when`(mockPrefs.getLong("sync_last_push_at", 0L)).thenReturn(1000L)
-        `when`(mockPrefs.getLong("sync_last_pull_at", 0L)).thenReturn(500L)
-        `when`(mockPrefs.getLong("sync_last_merge_at", 0L)).thenReturn(1500L)
+        whenever(mockPrefs.getString("sync_last_key", "")).thenReturn("test-key")
+        whenever(mockPrefs.getLong("sync_last_push_at", 0L)).thenReturn(1000L)
+        whenever(mockPrefs.getLong("sync_last_pull_at", 0L)).thenReturn(500L)
+        whenever(mockPrefs.getLong("sync_last_merge_at", 0L)).thenReturn(1500L)
         
         // When
         val status = repository.getSyncStatus()
@@ -270,7 +284,7 @@ class SyncRepositoryTest {
     @Test
     fun `getConflicts should return empty when S3 not configured`() = runTest {
         // Given
-        `when`(mockPrefs.getString("s3_endpoint", "")).thenReturn("")
+        whenever(mockPrefs.getString("s3_endpoint", "")).thenReturn("")
         
         // When
         val conflicts = repository.getConflicts()
@@ -283,7 +297,7 @@ class SyncRepositoryTest {
     fun `getConflicts should return empty when no sync key`() = runTest {
         // Given
         setupValidS3Config()
-        `when`(mockPrefs.getString("sync_last_key", "")).thenReturn("")
+        whenever(mockPrefs.getString("sync_last_key", "")).thenReturn("")
         
         // When
         val conflicts = repository.getConflicts()
@@ -298,6 +312,7 @@ class SyncRepositoryTest {
         setupValidS3Config()
         val localItem = InventoryItemEntity(
             id = 1L,
+            listId = 1L,
             name = "本地商品",
             brand = "品牌A",
             model = "型号1",
@@ -314,8 +329,10 @@ class SyncRepositoryTest {
         )
         
         val backupFile = File("backup.db")
-        `when`(mockExportRepository.backupDatabase(null)).thenReturn(backupFile)
-        `when`(mockStorageRepository.uploadBackup(any(), any())).thenReturn("new-key")
+        whenever(mockInventoryRepository.getMaxLastModified()).thenReturn(1L)
+        whenever(mockPrefs.getLong("sync_last_push_at", 0L)).thenReturn(0L)
+        whenever(mockExportRepository.backupDatabase(null)).thenReturn(backupFile)
+        whenever(mockStorageRepository.uploadBackup(any(), any())).thenReturn("new-key")
         
         // When
         val result = repository.resolveConflict(conflict, ConflictResolution.KeepLocal)
@@ -332,6 +349,7 @@ class SyncRepositoryTest {
         setupValidS3Config()
         val localItem = InventoryItemEntity(
             id = 1L,
+            listId = 1L,
             name = "本地商品",
             brand = "品牌A",
             model = "型号1",
@@ -342,6 +360,7 @@ class SyncRepositoryTest {
         )
         val remoteItem = InventoryItemEntity(
             id = 1L,
+            listId = 1L,
             name = "远程商品",
             brand = "品牌B",
             model = "型号2",
@@ -358,8 +377,10 @@ class SyncRepositoryTest {
         )
         
         val backupFile = File("backup.db")
-        `when`(mockExportRepository.backupDatabase(null)).thenReturn(backupFile)
-        `when`(mockStorageRepository.uploadBackup(any(), any())).thenReturn("new-key")
+        whenever(mockInventoryRepository.getMaxLastModified()).thenReturn(1L)
+        whenever(mockPrefs.getLong("sync_last_push_at", 0L)).thenReturn(0L)
+        whenever(mockExportRepository.backupDatabase(null)).thenReturn(backupFile)
+        whenever(mockStorageRepository.uploadBackup(any(), any())).thenReturn("new-key")
         
         // When
         val result = repository.resolveConflict(conflict, ConflictResolution.KeepRemote)
@@ -371,10 +392,10 @@ class SyncRepositoryTest {
     }
     
     private fun setupValidS3Config() {
-        `when`(mockPrefs.getString("s3_endpoint", "")).thenReturn("https://s3.example.com")
-        `when`(mockPrefs.getString("s3_region", "")).thenReturn("us-east-1")
-        `when`(mockPrefs.getString("s3_bucket", "")).thenReturn("test-bucket")
-        `when`(mockPrefs.getString("s3_access_key", "")).thenReturn("access-key")
-        `when`(mockPrefs.getString("s3_secret_key", "")).thenReturn("secret-key")
+        whenever(mockPrefs.getString("s3_endpoint", "")).thenReturn("https://s3.example.com")
+        whenever(mockPrefs.getString("s3_region", "")).thenReturn("us-east-1")
+        whenever(mockPrefs.getString("s3_bucket", "")).thenReturn("test-bucket")
+        whenever(mockPrefs.getString("s3_access_key", "")).thenReturn("access-key")
+        whenever(mockPrefs.getString("s3_secret_key", "")).thenReturn("secret-key")
     }
 }

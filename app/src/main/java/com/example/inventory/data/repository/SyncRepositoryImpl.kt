@@ -1,6 +1,7 @@
 package com.example.inventory.data.repository
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.database.sqlite.SQLiteDatabase
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
@@ -56,10 +57,11 @@ class SyncRepositoryImpl(
     context: Context,
     private val exportRepository: ExportRepository,
     private val storageRepository: StorageRepository,
-    private val inventoryRepository: InventoryRepository
+    private val inventoryRepository: InventoryRepository,
+    private val prefsProvider: (Context) -> SharedPreferences = ::securePreferences
 ) : SyncRepository {
     private val appContext = context.applicationContext
-    private val prefs by lazy { securePreferences(appContext) }
+    private val prefs by lazy { prefsProvider(appContext) }
     
     /**
      * 互斥锁，确保同步操作的原子性
@@ -390,14 +392,15 @@ class SyncRepositoryImpl(
         }
     }
 
-    private fun securePreferences(context: Context) = EncryptedSharedPreferences.create(
-        context,
-        PREFS_NAME,
-        MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
 }
+
+private fun securePreferences(context: Context) = EncryptedSharedPreferences.create(
+    context,
+    PREFS_NAME,
+    MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
+    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+)
 
 private const val PREFS_NAME = PrefsKeys.SETTINGS_PREFS_NAME
 private const val KEY_S3_ENDPOINT = PrefsKeys.KEY_S3_ENDPOINT
