@@ -4,3 +4,6 @@
 app/src/main/assets/onnx/*.onnx 
 *.hprof 
 .idea/ 
+"CODE_REVIEW_ADDENDUM.md" 
+"CODE_REVIEW_ADDENDUM2.md" 
+"Code Review.md" 
