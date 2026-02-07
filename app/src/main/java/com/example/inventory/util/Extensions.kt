@@ -16,6 +16,7 @@ import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.coroutines.cancellation.CancellationException
 import androidx.compose.ui.Modifier
 
 // ==================== String 扩展 ====================
@@ -147,6 +148,10 @@ fun ViewModel.launchSafe(
     viewModelScope.launch {
         try {
             block()
+        } catch (e: CancellationException) {
+            // 必须重新抛出 CancellationException
+            // 否则协程无法正常取消，可能导致资源泄漏
+            throw e
         } catch (e: Exception) {
             onError(e)
             AppLogger.e("协程执行失败: ${e.message}", "ViewModel", e)

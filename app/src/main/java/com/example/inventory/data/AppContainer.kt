@@ -52,7 +52,13 @@ import com.example.inventory.util.Constants
 import com.example.inventory.util.PrefsKeys
 import com.example.inventory.util.SecurePreferencesManager
 import com.example.inventory.util.settingsDataStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.Executors
 
@@ -246,15 +252,41 @@ class AppContainer(context: Context) {
 private class OcrBackendModeProvider(private val context: Context) {
     @Volatile
     private var lastMode: String? = null
-
-    fun getMode(): String {
-        // 统一从 DataStore 读取 OCR 后端设置
-        val mode = runBlocking {
-            context.settingsDataStore.data.first()[PrefsKeys.OCR_BACKEND_PREF_KEY]
-        } ?: Constants.Ocr.BACKEND_AUTO
-        maybeClearOnnx(mode)
-        return mode
+    
+    /**
+     * 缓存的 OCR 后端模式
+     * 
+     * 使用 @Volatile 确保多线程可见性
+     * 默认值为 AUTO，通过 Flow 异步更新
+     */
+    @Volatile
+    private var cachedMode: String = Constants.Ocr.BACKEND_AUTO
+    
+    /**
+     * 协程作用域，用于监听设置变化
+     * 使用 SupervisorJob 确保单个失败不影响其他任务
+     */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    
+    init {
+        // 异步监听 DataStore 变化，更新缓存
+        // 这样避免了每次 getMode() 都阻塞主线程
+        context.settingsDataStore.data
+            .map { prefs -> prefs[PrefsKeys.OCR_BACKEND_PREF_KEY] ?: Constants.Ocr.BACKEND_AUTO }
+            .onEach { mode ->
+                cachedMode = mode
+                maybeClearOnnx(mode)
+            }
+            .launchIn(scope)
     }
+
+    /**
+     * 获取当前 OCR 后端模式
+     * 
+     * 直接返回缓存值，不阻塞调用线程
+     * 首次调用可能返回默认值，后续会通过 Flow 自动更新
+     */
+    fun getMode(): String = cachedMode
 
     private fun maybeClearOnnx(mode: String) {
         val previous = lastMode

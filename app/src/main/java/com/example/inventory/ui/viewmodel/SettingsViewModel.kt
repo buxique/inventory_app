@@ -50,10 +50,10 @@ class SettingsViewModel(
     private val _state = MutableStateFlow(
         SettingsUiState(
             s3Config = loadS3Config(),
-            backupDir = s3Prefs.getString(KEY_BACKUP_DIR, "") ?: "",
-            autoSync = s3Prefs.getBoolean(KEY_AUTO_SYNC, false),
-            syncInterval = s3Prefs.getString(KEY_SYNC_INTERVAL, "30 min") ?: "30 min",
-            ocrBackend = s3Prefs.getString(KEY_OCR_BACKEND, com.example.inventory.util.Constants.Ocr.BACKEND_AUTO)
+            backupDir = s3Prefs.getString(PrefsKeys.KEY_BACKUP_DIR, "") ?: "",
+            autoSync = s3Prefs.getBoolean(PrefsKeys.KEY_AUTO_SYNC, false),
+            syncInterval = s3Prefs.getString(PrefsKeys.KEY_SYNC_INTERVAL, "30 min") ?: "30 min",
+            ocrBackend = s3Prefs.getString(PrefsKeys.KEY_OCR_BACKEND, com.example.inventory.util.Constants.Ocr.BACKEND_AUTO)
                 ?: com.example.inventory.util.Constants.Ocr.BACKEND_AUTO
         )
     )
@@ -130,17 +130,17 @@ class SettingsViewModel(
 
     fun updateBackupDir(dir: String) {
         _state.update { it.copy(backupDir = dir) }
-        s3Prefs.edit().putString(KEY_BACKUP_DIR, dir).apply()
+        s3Prefs.edit().putString(PrefsKeys.KEY_BACKUP_DIR, dir).apply()
     }
 
     fun updateAutoSync(enabled: Boolean) {
         _state.update { it.copy(autoSync = enabled) }
-        s3Prefs.edit().putBoolean(KEY_AUTO_SYNC, enabled).apply()
+        s3Prefs.edit().putBoolean(PrefsKeys.KEY_AUTO_SYNC, enabled).apply()
     }
 
     fun updateSyncInterval(interval: String) {
         _state.update { it.copy(syncInterval = interval) }
-        s3Prefs.edit().putString(KEY_SYNC_INTERVAL, interval).apply()
+        s3Prefs.edit().putString(PrefsKeys.KEY_SYNC_INTERVAL, interval).apply()
     }
 
     fun updateOcrBackend(mode: String) {
@@ -156,7 +156,7 @@ class SettingsViewModel(
     private fun loadOcrBackend() {
         viewModelScope.launch {
             val fromStore = settingsDataStore.data.first()[PrefsKeys.OCR_BACKEND_PREF_KEY]
-            val mode = fromStore ?: s3Prefs.getString(KEY_OCR_BACKEND, com.example.inventory.util.Constants.Ocr.BACKEND_AUTO)
+            val mode = fromStore ?: s3Prefs.getString(PrefsKeys.KEY_OCR_BACKEND, com.example.inventory.util.Constants.Ocr.BACKEND_AUTO)
             _state.update { it.copy(ocrBackend = mode ?: com.example.inventory.util.Constants.Ocr.BACKEND_AUTO) }
         }
     }
@@ -486,31 +486,21 @@ class SettingsViewModel(
 
     private fun loadS3Config(): S3Config {
         return S3Config(
-            endpoint = s3Prefs.getString(KEY_S3_ENDPOINT, "") ?: "",
-            region = s3Prefs.getString(KEY_S3_REGION, "") ?: "",
-            bucket = s3Prefs.getString(KEY_S3_BUCKET, "") ?: "",
-            accessKey = s3Prefs.getString(KEY_S3_ACCESS_KEY, "") ?: "",
-            secretKey = s3Prefs.getString(KEY_S3_SECRET_KEY, "") ?: ""
+            endpoint = s3Prefs.getString(PrefsKeys.KEY_S3_ENDPOINT, "") ?: "",
+            region = s3Prefs.getString(PrefsKeys.KEY_S3_REGION, "") ?: "",
+            bucket = s3Prefs.getString(PrefsKeys.KEY_S3_BUCKET, "") ?: "",
+            accessKey = s3Prefs.getString(PrefsKeys.KEY_S3_ACCESS_KEY, "") ?: "",
+            secretKey = s3Prefs.getString(PrefsKeys.KEY_S3_SECRET_KEY, "") ?: ""
         )
     }
 
     private fun persistS3Config(config: S3Config) {
         s3Prefs.edit()
-            .putString(KEY_S3_ENDPOINT, config.endpoint)
-            .putString(KEY_S3_REGION, config.region)
-            .putString(KEY_S3_BUCKET, config.bucket)
-            .putString(KEY_S3_ACCESS_KEY, config.accessKey)
-            .putString(KEY_S3_SECRET_KEY, config.secretKey)
+            .putString(PrefsKeys.KEY_S3_ENDPOINT, config.endpoint)
+            .putString(PrefsKeys.KEY_S3_REGION, config.region)
+            .putString(PrefsKeys.KEY_S3_BUCKET, config.bucket)
+            .putString(PrefsKeys.KEY_S3_ACCESS_KEY, config.accessKey)
+            .putString(PrefsKeys.KEY_S3_SECRET_KEY, config.secretKey)
             .apply()
     }
 }
-
-private const val KEY_S3_ENDPOINT = "s3_endpoint"
-private const val KEY_S3_REGION = "s3_region"
-private const val KEY_S3_BUCKET = "s3_bucket"
-private const val KEY_S3_ACCESS_KEY = "s3_access_key"
-private const val KEY_S3_SECRET_KEY = "s3_secret_key"
-private const val KEY_BACKUP_DIR = "backup_dir"
-private const val KEY_AUTO_SYNC = "auto_sync"
-private const val KEY_SYNC_INTERVAL = "sync_interval"
-private const val KEY_OCR_BACKEND = com.example.inventory.util.PrefsKeys.KEY_OCR_BACKEND

@@ -30,6 +30,11 @@ object PrefsKeys {
     const val KEY_S3_ACCESS_KEY = "s3_access_key"
     const val KEY_S3_SECRET_KEY = "s3_secret_key"
     
+    // 备份同步配置
+    const val KEY_BACKUP_DIR = "backup_dir"
+    const val KEY_AUTO_SYNC = "auto_sync"
+    const val KEY_SYNC_INTERVAL = "sync_interval"
+    
     // ==================== Sync 相关 ====================
     const val KEY_LAST_SYNC_KEY = "sync_last_key"
     const val KEY_LAST_PUSH_AT = "sync_last_push_at"
