@@ -1,6 +1,8 @@
 package com.example.inventory.domain.usecase
 
 import com.example.inventory.data.repository.InventoryRepository
+import com.example.inventory.domain.util.mapToAppException
+import kotlinx.coroutines.CancellationException
 
 /**
  * 删除库存商品用例
@@ -33,8 +35,10 @@ class DeleteInventoryItemUseCase(
             }
             
             Result.success(rowsAffected)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.failure(mapToAppException(e))
         }
     }
 }

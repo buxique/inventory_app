@@ -2,6 +2,7 @@ package com.example.inventory.ui.viewmodel
 
 import com.example.inventory.data.model.InventoryItemEntity
 import com.example.inventory.data.repository.InventoryRepository
+import com.example.inventory.domain.model.AppException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -75,7 +76,9 @@ class ItemOperationViewModelTest {
         
         // Then
         assertTrue(result.isFailure)
-        assertEquals(exception, result.exceptionOrNull())
+        val error = result.exceptionOrNull()
+        assertTrue(error is AppException.UnknownException)
+        assertEquals("添加失败", error?.message)
     }
     
     @Test

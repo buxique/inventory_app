@@ -3,6 +3,7 @@ package com.example.inventory.domain.util
 import android.database.sqlite.SQLiteException
 import com.example.inventory.domain.model.AppException
 import com.example.inventory.domain.model.AppResult
+import kotlinx.coroutines.CancellationException
 import java.io.IOException
 
 /**
@@ -13,8 +14,20 @@ import java.io.IOException
 suspend fun <T> safeCall(block: suspend () -> T): AppResult<T> {
     return try {
         AppResult.Success(block())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: IOException) {
+        AppResult.Error(mapToAppException(e))
+    } catch (e: SQLiteException) {
+        AppResult.Error(mapToAppException(e))
+    } catch (e: IllegalArgumentException) {
+        AppResult.Error(mapToAppException(e))
+    } catch (e: SecurityException) {
+        AppResult.Error(mapToAppException(e))
+    } catch (e: AppException) {
+        AppResult.Error(mapToAppException(e))
     } catch (e: Exception) {
-        AppResult.Error(mapException(e))
+        AppResult.Error(mapToAppException(e))
     }
 }
 
@@ -24,7 +37,7 @@ suspend fun <T> safeCall(block: suspend () -> T): AppResult<T> {
  * @param e 原始异常
  * @return 应用异常
  */
-private fun mapException(e: Exception): AppException {
+fun mapToAppException(e: Exception): AppException {
     return when (e) {
         is IOException -> AppException.NetworkException(e.message ?: "网络连接失败")
         is SQLiteException -> AppException.DatabaseException(e.message ?: "数据库操作失败")

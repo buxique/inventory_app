@@ -3,7 +3,9 @@ package com.example.inventory.domain.usecase
 import com.example.inventory.data.model.InventoryItemEntity
 import com.example.inventory.data.repository.InventoryRepository
 import androidx.paging.PagingData
+import com.example.inventory.domain.util.mapToAppException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.CancellationException
 
 /**
  * 获取库存商品列表用例
@@ -18,8 +20,10 @@ class GetInventoryItemsUseCase(
         return try {
             val itemsFlow = repository.getItems()
             Result.success(itemsFlow)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.failure(mapToAppException(e))
         }
     }
 }

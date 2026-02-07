@@ -14,6 +14,7 @@ import com.example.inventory.data.repository.StorageRepository
 import com.example.inventory.data.repository.ConflictResolution
 import com.example.inventory.data.repository.SyncConflictItem
 import com.example.inventory.data.repository.SyncRepository
+import com.example.inventory.domain.util.mapToAppException
 import com.example.inventory.ui.state.ErrorState
 import com.example.inventory.ui.state.ExportState
 import com.example.inventory.ui.state.RestoreState
@@ -28,6 +29,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 /**
  * 设置页面 ViewModel
@@ -162,105 +164,100 @@ class SettingsViewModel(
     fun exportCsv() {
         viewModelScope.launch {
             _state.update { it.copy(exportState = ExportState.Exporting(0, 0, "正在导出")) }
-            val result = runCatching {
+            try {
                 val items = inventoryRepository.getAllItemsSnapshot()
-                exportRepository.exportCsv(items)
-            }
-            result.fold(
-                onSuccess = { file ->
-                    _state.update {
-                        it.copy(
-                            lastExportPath = file.absolutePath,
-                            exportState = ExportState.Success(file.absolutePath)
-                        )
-                    }
-                },
-                onFailure = { e ->
-                    _state.update {
-                        it.copy(exportState = ExportState.Error(e.message ?: "导出失败"))
-                    }
+                val file = exportRepository.exportCsv(items)
+                _state.update {
+                    it.copy(
+                        lastExportPath = file.absolutePath,
+                        exportState = ExportState.Success(file.absolutePath)
+                    )
                 }
-            )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(exportState = ExportState.Error(errorMessage(e, "导出失败")))
+                }
+            }
         }
     }
 
     fun exportXlsx() {
         viewModelScope.launch {
             _state.update { it.copy(exportState = ExportState.Exporting(0, 0, "正在导出")) }
-            val result = runCatching {
+            try {
                 val items = inventoryRepository.getAllItemsSnapshot()
-                exportRepository.exportXlsx(items)
-            }
-            result.fold(
-                onSuccess = { file ->
-                    _state.update {
-                        it.copy(
-                            lastExportPath = file.absolutePath,
-                            exportState = ExportState.Success(file.absolutePath)
-                        )
-                    }
-                },
-                onFailure = { e ->
-                    _state.update {
-                        it.copy(exportState = ExportState.Error(e.message ?: "导出失败"))
-                    }
+                val file = exportRepository.exportXlsx(items)
+                _state.update {
+                    it.copy(
+                        lastExportPath = file.absolutePath,
+                        exportState = ExportState.Success(file.absolutePath)
+                    )
                 }
-            )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(exportState = ExportState.Error(errorMessage(e, "导出失败")))
+                }
+            }
         }
     }
 
     fun backupToS3() {
         viewModelScope.launch {
-            val result = runCatching {
+            val key: String
+            try {
                 val backup = exportRepository.backupDatabase()
                 if (backup == null) {
                     throw IllegalStateException("未找到可备份数据库文件")
                 }
-                val key = storageRepository.uploadBackup(backup, _state.value.s3Config)
-                if (key.isNullOrBlank()) {
+                val uploadedKey = storageRepository.uploadBackup(backup, _state.value.s3Config)
+                if (uploadedKey.isNullOrBlank()) {
                     throw IllegalStateException("上传返回空Key")
                 }
-                key
+                key = uploadedKey
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showS3Error("上传失败", errorMessage(e, "未知错误"))
+                return@launch
             }
-            result.fold(
-                onSuccess = { key ->
-                    _state.update { it.copy(lastBackupKey = key, s3ErrorMessage = "", showS3ErrorDialog = false) }
-                },
-                onFailure = { e ->
-                    showS3Error("上传失败", e.message ?: "未知错误")
-                }
-            )
+            _state.update { it.copy(lastBackupKey = key, s3ErrorMessage = "", showS3ErrorDialog = false) }
         }
     }
 
     fun restoreFromS3() {
         viewModelScope.launch {
             _state.update { it.copy(restoreState = RestoreState.Restoring(0, 0, "正在恢复")) }
-            val result = runCatching {
-                val key = _state.value.lastBackupKey
-                if (key.isBlank()) {
+            val key: String
+            val success: Boolean
+            try {
+                val currentKey = _state.value.lastBackupKey
+                if (currentKey.isBlank()) {
                     throw IllegalStateException("没有可用的备份Key")
                 }
-                val file = storageRepository.downloadBackup(key, _state.value.s3Config)
+                val file = storageRepository.downloadBackup(currentKey, _state.value.s3Config)
                 if (file == null) {
                     throw IllegalStateException("恢复文件失败")
                 }
-                exportRepository.restoreDatabase(file)
+                success = exportRepository.restoreDatabase(file)
+                key = currentKey
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val message = errorMessage(e, "未知错误")
+                _state.update { it.copy(restoreStatus = "失败", restoreState = RestoreState.Error(message)) }
+                showS3Error("恢复失败", message)
+                return@launch
             }
-            result.fold(
-                onSuccess = { success ->
-                    if (success) {
-                        _state.update { it.copy(restoreStatus = "成功", restoreState = RestoreState.Success(_state.value.lastBackupKey)) }
-                    } else {
-                        _state.update { it.copy(restoreStatus = "失败", restoreState = RestoreState.Error("恢复文件失败")) }
-                        showS3Error("S3访问失败", "恢复文件失败")
-                    }
-                },
-                onFailure = { e ->
-                    _state.update { it.copy(restoreStatus = "失败", restoreState = RestoreState.Error(e.message ?: "未知错误")) }
-                    showS3Error("恢复失败", e.message ?: "未知错误")
-                }
-            )
+            if (success) {
+                _state.update { it.copy(restoreStatus = "成功", restoreState = RestoreState.Success(key)) }
+            } else {
+                _state.update { it.copy(restoreStatus = "失败", restoreState = RestoreState.Error("恢复文件失败")) }
+                showS3Error("S3访问失败", "恢复文件失败")
+            }
         }
     }
 
@@ -278,86 +275,153 @@ class SettingsViewModel(
 
     fun updateUserRole(username: String, role: UserRole) {
         viewModelScope.launch {
-            authRepository.updateUserRole(username, role.name.lowercase())
-            refreshUsers()
+            try {
+                val success = authRepository.updateUserRole(username, role.name.lowercase())
+                if (!success) {
+                    showUserError("更新角色失败")
+                }
+                refreshUsers()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showUserError(errorMessage(e, "更新角色失败"))
+            }
         }
     }
 
     fun addUser(username: String, password: String, role: UserRole) {
         viewModelScope.launch {
-            val result = authRepository.createUser(username, password, role.name.lowercase())
-            if (!result.success) {
-                showUserError(result.message)
+            try {
+                val result = authRepository.createUser(username, password, role.name.lowercase())
+                if (!result.success) {
+                    showUserError(result.message)
+                }
+                refreshUsers()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showUserError(errorMessage(e, "创建用户失败"))
             }
-            refreshUsers()
         }
     }
 
     fun resetPassword(username: String, newPassword: String) {
         viewModelScope.launch {
-            val result = authRepository.resetPassword(username, newPassword)
-            if (!result.success) {
-                showUserError(result.message)
+            try {
+                val result = authRepository.resetPassword(username, newPassword)
+                if (!result.success) {
+                    showUserError(result.message)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showUserError(errorMessage(e, "重置密码失败"))
             }
         }
     }
 
     fun deleteUser(username: String) {
         viewModelScope.launch {
-            val result = authRepository.deleteUser(username)
-            if (!result.success) {
-                showUserError(result.message)
+            try {
+                val result = authRepository.deleteUser(username)
+                if (!result.success) {
+                    showUserError(result.message)
+                }
+                refreshUsers()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showUserError(errorMessage(e, "删除用户失败"))
             }
-            refreshUsers()
         }
     }
 
     fun unlockAccount(username: String) {
         viewModelScope.launch {
-            val success = authRepository.unlockAccount(username)
-            if (!success) {
-                showUserError("未找到用户或账户未锁定")
+            try {
+                val success = authRepository.unlockAccount(username)
+                if (!success) {
+                    showUserError("未找到用户或账户未锁定")
+                }
+                refreshUsers()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showUserError(errorMessage(e, "解锁失败"))
             }
-            refreshUsers()
         }
     }
 
     fun syncPush() {
         viewModelScope.launch {
-            syncRepository.pushOperations()
-            refreshSyncStatus()
-            refreshSyncConflicts()
+            try {
+                syncRepository.pushOperations()
+                refreshSyncStatus()
+                refreshSyncConflicts()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showS3Error("同步失败", errorMessage(e, "未知错误"))
+            }
         }
     }
 
     fun syncPull() {
         viewModelScope.launch {
-            syncRepository.pullOperations()
-            refreshSyncStatus()
-            refreshSyncConflicts()
+            try {
+                syncRepository.pullOperations()
+                refreshSyncStatus()
+                refreshSyncConflicts()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showS3Error("同步失败", errorMessage(e, "未知错误"))
+            }
         }
     }
 
     fun syncMerge() {
         viewModelScope.launch {
-            syncRepository.mergeOperations()
-            refreshSyncStatus()
-            refreshSyncConflicts()
+            try {
+                syncRepository.mergeOperations()
+                refreshSyncStatus()
+                refreshSyncConflicts()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showS3Error("同步失败", errorMessage(e, "未知错误"))
+            }
         }
     }
 
     fun refreshSyncConflicts() {
         viewModelScope.launch {
-            val conflicts = syncRepository.getConflicts()
-            _state.update { it.copy(syncConflicts = conflicts) }
+            try {
+                val conflicts = syncRepository.getConflicts()
+                _state.update { it.copy(syncConflicts = conflicts) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showS3Error("获取冲突失败", errorMessage(e, "未知错误"))
+            }
         }
     }
 
     fun resolveConflict(conflict: SyncConflictItem, resolution: ConflictResolution) {
         viewModelScope.launch {
-            syncRepository.resolveConflict(conflict, resolution)
-            refreshSyncStatus()
-            refreshSyncConflicts()
+            try {
+                val success = syncRepository.resolveConflict(conflict, resolution)
+                if (!success) {
+                    showS3Error("解决冲突失败", "操作未完成")
+                    return@launch
+                }
+                refreshSyncStatus()
+                refreshSyncConflicts()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showS3Error("解决冲突失败", errorMessage(e, "未知错误"))
+            }
         }
     }
 
@@ -370,6 +434,10 @@ class SettingsViewModel(
                 showS3DetailDialog = false
             )
         }
+    }
+
+    private fun errorMessage(e: Exception, fallback: String): String {
+        return mapToAppException(e).message ?: fallback
     }
 
     fun dismissUserError() {
@@ -387,20 +455,32 @@ class SettingsViewModel(
 
     private fun refreshUsers() {
         viewModelScope.launch {
-            val users = authRepository.getUsers().map { user ->
-                UserRoleEntry(
-                    username = user.username,
-                    role = if (user.role.lowercase() == "admin") UserRole.Admin else UserRole.User
-                )
+            try {
+                val users = authRepository.getUsers().map { user ->
+                    UserRoleEntry(
+                        username = user.username,
+                        role = if (user.role.lowercase() == "admin") UserRole.Admin else UserRole.User
+                    )
+                }
+                _state.update { it.copy(users = users) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showUserError(errorMessage(e, "获取用户失败"))
             }
-            _state.update { it.copy(users = users) }
         }
     }
 
     private fun refreshSyncStatus() {
         viewModelScope.launch {
-            val status = syncRepository.getSyncStatus()
-            _state.update { it.copy(syncStatus = status) }
+            try {
+                val status = syncRepository.getSyncStatus()
+                _state.update { it.copy(syncStatus = status) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showS3Error("获取同步状态失败", errorMessage(e, "未知错误"))
+            }
         }
     }
 

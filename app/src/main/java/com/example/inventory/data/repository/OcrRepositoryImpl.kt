@@ -26,9 +26,11 @@ import com.example.inventory.data.repository.ocr.PaddleLiteEngine
 import com.example.inventory.data.repository.ocr.PaddleLiteModelSpec
 import com.example.inventory.util.AppLogger
 import com.huaban.analysis.jieba.JiebaSegmenter
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 import java.util.UUID
 import kotlin.math.abs
 
@@ -276,11 +278,15 @@ class OcrRepositoryImpl(
                     cleanupBitmaps(bitmap, oriented, corrected, enhanced)
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: IOException) {
+            AppLogger.e("OCR 识别失败: ${e.message}", "OCR", e)
+            bitmap.safeRecycle()
+            emptyPipelineOutput()
         } catch (e: Exception) {
             AppLogger.e("OCR 识别失败: ${e.message}", "OCR", e)
-            if (!bitmap.isRecycled) {
-                bitmap.recycle()
-            }
+            bitmap.safeRecycle()
             emptyPipelineOutput()
         }
     }
@@ -438,15 +444,15 @@ class OcrRepositoryImpl(
         enhanced: android.graphics.Bitmap
     ) {
         if (enhanced != original && enhanced != oriented && enhanced != corrected) {
-            enhanced.recycle()
+            enhanced.safeRecycle()
         }
         if (corrected != original && corrected != oriented) {
-            corrected.recycle()
+            corrected.safeRecycle()
         }
         if (oriented != original) {
-            oriented.recycle()
+            oriented.safeRecycle()
         }
-        original.recycle()
+        original.safeRecycle()
     }
 
     private fun buildDetectedResult(
@@ -477,9 +483,7 @@ class OcrRepositoryImpl(
                     )
                 )
             } finally {
-                if (!crop.isRecycled) {
-                    crop.recycle()
-                }
+                crop.safeRecycle()
             }
         }
         return OcrResult(groups)
@@ -557,9 +561,7 @@ class OcrRepositoryImpl(
                                 )
                             )
                         } finally {
-                            if (!innerCrop.isRecycled) {
-                                innerCrop.recycle()
-                            }
+                            innerCrop.safeRecycle()
                         }
                     }
                 }
@@ -576,9 +578,7 @@ class OcrRepositoryImpl(
                     tableBoxes.add(cellBox)
                 }
             } finally {
-                if (!cellCrop.isRecycled) {
-                    cellCrop.recycle()
-                }
+                cellCrop.safeRecycle()
             }
         }
         if (tableCells.isEmpty()) return null
@@ -757,7 +757,7 @@ private class OcrPreprocessor(
         } else {
             val rotated = bitmapUtils.rotateBitmap(orientedDoc, textlineAngle)
             if (orientedDoc != bitmap) {
-                orientedDoc.recycle()
+                orientedDoc.safeRecycle()
             }
             rotated
         }
@@ -803,6 +803,12 @@ private class OcrInferenceEngine(
         }.onFailure { e ->
             AppLogger.e("OCR 检测失败: ${e.message}", "OCR", e)
         }.getOrNull()
+    }
+}
+
+private fun android.graphics.Bitmap.safeRecycle() {
+    if (!isRecycled) {
+        recycle()
     }
 }
 

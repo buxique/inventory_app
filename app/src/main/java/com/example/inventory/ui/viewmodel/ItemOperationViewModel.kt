@@ -4,9 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.inventory.data.model.InventoryItemEntity
 import com.example.inventory.data.repository.InventoryRepository
+import com.example.inventory.domain.util.mapToAppException
 import com.example.inventory.domain.usecase.AddInventoryItemUseCase
 import com.example.inventory.domain.usecase.DeleteInventoryItemUseCase
 import com.example.inventory.domain.usecase.UpdateInventoryItemUseCase
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -65,8 +67,10 @@ class ItemOperationViewModel(
         return try {
             inventoryRepository.batchAddItems(items)
             Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.failure(mapToAppException(e))
         }
     }
     
@@ -92,8 +96,10 @@ class ItemOperationViewModel(
             )
             val id = inventoryRepository.addItem(newItem)
             Result.success(id)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.failure(mapToAppException(e))
         }
     }
     

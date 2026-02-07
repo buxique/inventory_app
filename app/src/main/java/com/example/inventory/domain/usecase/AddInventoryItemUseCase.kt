@@ -2,9 +2,9 @@ package com.example.inventory.domain.usecase
 
 import com.example.inventory.data.model.InventoryItemEntity
 import com.example.inventory.data.repository.InventoryRepository
-import com.example.inventory.domain.model.AppException
-import com.example.inventory.domain.util.safeCall
+import com.example.inventory.domain.util.mapToAppException
 import com.example.inventory.util.Constants
+import kotlinx.coroutines.CancellationException
 
 /**
  * 添加库存商品用例
@@ -30,8 +30,10 @@ class AddInventoryItemUseCase(
             // 执行添加操作
             val id = repository.addItem(params.item)
             Result.success(id)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.failure(mapToAppException(e))
         }
     }
     
