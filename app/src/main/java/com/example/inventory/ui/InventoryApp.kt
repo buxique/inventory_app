@@ -98,7 +98,6 @@ fun InventoryApp(factory: AppViewModelFactory) {
                 listViewModel = listViewModel,
                 importViewModel = importViewModel,
                 inventoryRepository = factory.container.inventoryRepository,
-                importCoordinator = factory.container.importCoordinator,
                 showImport = showImport,
                 onNavigateCapture = { navController.navigate("capture") },
                 onNavigateAddItem = { navController.navigate("addItem") },

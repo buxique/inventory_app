@@ -11,7 +11,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.res.stringResource
 import com.example.inventory.R
-import com.example.inventory.data.importer.ImportCoordinator
 import com.example.inventory.data.model.OcrGroup
 import com.example.inventory.data.repository.InventoryRepository
 import com.example.inventory.ui.viewmodel.ImportViewModel
@@ -26,7 +25,6 @@ internal fun InventoryPanel(
     listViewModel: InventoryListViewModel,
     importViewModel: ImportViewModel,
     inventoryRepository: InventoryRepository,
-    importCoordinator: ImportCoordinator,
     dropTargets: MutableMap<Long, Rect>,
     cellDropTargets: MutableMap<Long, MutableMap<String, Rect>>,
     highlightedCell: Pair<Long, String>?,
@@ -40,7 +38,6 @@ internal fun InventoryPanel(
             listViewModel = listViewModel,
             importViewModel = importViewModel,
             inventoryRepository = inventoryRepository,
-            importCoordinator = importCoordinator,
             showImport = false,
             onNavigateCapture = {},
             onNavigateAddItem = {},

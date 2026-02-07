@@ -161,55 +161,106 @@ class SettingsViewModel(
 
     fun exportCsv() {
         viewModelScope.launch {
-            val items = inventoryRepository.getAllItemsSnapshot()
-            val file = exportRepository.exportCsv(items)
-            _state.update { it.copy(lastExportPath = file.absolutePath) }
+            _state.update { it.copy(exportState = ExportState.Exporting(0, 0, "正在导出")) }
+            val result = runCatching {
+                val items = inventoryRepository.getAllItemsSnapshot()
+                exportRepository.exportCsv(items)
+            }
+            result.fold(
+                onSuccess = { file ->
+                    _state.update {
+                        it.copy(
+                            lastExportPath = file.absolutePath,
+                            exportState = ExportState.Success(file.absolutePath)
+                        )
+                    }
+                },
+                onFailure = { e ->
+                    _state.update {
+                        it.copy(exportState = ExportState.Error(e.message ?: "导出失败"))
+                    }
+                }
+            )
         }
     }
 
     fun exportXlsx() {
         viewModelScope.launch {
-            val items = inventoryRepository.getAllItemsSnapshot()
-            val file = exportRepository.exportXlsx(items)
-            _state.update { it.copy(lastExportPath = file.absolutePath) }
+            _state.update { it.copy(exportState = ExportState.Exporting(0, 0, "正在导出")) }
+            val result = runCatching {
+                val items = inventoryRepository.getAllItemsSnapshot()
+                exportRepository.exportXlsx(items)
+            }
+            result.fold(
+                onSuccess = { file ->
+                    _state.update {
+                        it.copy(
+                            lastExportPath = file.absolutePath,
+                            exportState = ExportState.Success(file.absolutePath)
+                        )
+                    }
+                },
+                onFailure = { e ->
+                    _state.update {
+                        it.copy(exportState = ExportState.Error(e.message ?: "导出失败"))
+                    }
+                }
+            )
         }
     }
 
     fun backupToS3() {
         viewModelScope.launch {
-            try {
+            val result = runCatching {
                 val backup = exportRepository.backupDatabase()
-                if (backup != null) {
-                    val key = storageRepository.uploadBackup(backup, _state.value.s3Config)
-                    if (key.isNullOrBlank()) {
-                        showS3Error("S3访问失败", "上传返回空Key")
-                    } else {
-                        _state.update { it.copy(lastBackupKey = key, s3ErrorMessage = "", showS3ErrorDialog = false) }
-                    }
-                } else {
-                    showS3Error("S3访问失败", "未找到可备份数据库文件")
+                if (backup == null) {
+                    throw IllegalStateException("未找到可备份数据库文件")
                 }
-            } catch (e: Exception) {
-                showS3Error("上传失败", e.message ?: "未知错误")
+                val key = storageRepository.uploadBackup(backup, _state.value.s3Config)
+                if (key.isNullOrBlank()) {
+                    throw IllegalStateException("上传返回空Key")
+                }
+                key
             }
+            result.fold(
+                onSuccess = { key ->
+                    _state.update { it.copy(lastBackupKey = key, s3ErrorMessage = "", showS3ErrorDialog = false) }
+                },
+                onFailure = { e ->
+                    showS3Error("上传失败", e.message ?: "未知错误")
+                }
+            )
         }
     }
 
     fun restoreFromS3() {
         viewModelScope.launch {
-            try {
+            _state.update { it.copy(restoreState = RestoreState.Restoring(0, 0, "正在恢复")) }
+            val result = runCatching {
                 val key = _state.value.lastBackupKey
-                val file = if (key.isNotBlank()) {
-                    storageRepository.downloadBackup(key, _state.value.s3Config)
-                } else null
-                val success = if (file != null) exportRepository.restoreDatabase(file) else false
-                _state.update { it.copy(restoreStatus = if (success) "成功" else "失败") }
-                if (!success) {
-                    showS3Error("S3访问失败", "恢复文件失败")
+                if (key.isBlank()) {
+                    throw IllegalStateException("没有可用的备份Key")
                 }
-            } catch (e: Exception) {
-                showS3Error("恢复失败", e.message ?: "未知错误")
+                val file = storageRepository.downloadBackup(key, _state.value.s3Config)
+                if (file == null) {
+                    throw IllegalStateException("恢复文件失败")
+                }
+                exportRepository.restoreDatabase(file)
             }
+            result.fold(
+                onSuccess = { success ->
+                    if (success) {
+                        _state.update { it.copy(restoreStatus = "成功", restoreState = RestoreState.Success(_state.value.lastBackupKey)) }
+                    } else {
+                        _state.update { it.copy(restoreStatus = "失败", restoreState = RestoreState.Error("恢复文件失败")) }
+                        showS3Error("S3访问失败", "恢复文件失败")
+                    }
+                },
+                onFailure = { e ->
+                    _state.update { it.copy(restoreStatus = "失败", restoreState = RestoreState.Error(e.message ?: "未知错误")) }
+                    showS3Error("恢复失败", e.message ?: "未知错误")
+                }
+            )
         }
     }
 

@@ -88,7 +88,7 @@ class CaptureViewModelTest {
         // Given
         val mockFile = mock<File>()
         val errorMessage = "识别失败"
-        whenever(mockOcrRepository.recognizeLocal(mockFile)).thenThrow(RuntimeException(errorMessage))
+        whenever(mockOcrRepository.recognizeLocal(mockFile)).thenThrow(IllegalStateException(errorMessage))
         
         // When
         viewModel.runOcr(mockFile)

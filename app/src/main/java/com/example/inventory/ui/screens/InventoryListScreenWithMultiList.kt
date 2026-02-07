@@ -21,11 +21,11 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,10 +34,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.example.inventory.data.model.InventoryListEntity
-import com.example.inventory.data.importer.ImportCoordinator
 import com.example.inventory.data.repository.InventoryRepository
 import com.example.inventory.ui.screens.inventory.components.*
 import com.example.inventory.ui.state.DialogState
@@ -48,6 +48,7 @@ import com.example.inventory.ui.viewmodel.ImportViewModel
 import com.example.inventory.ui.viewmodel.InventoryListViewModel
 import com.example.inventory.ui.viewmodel.InventoryViewModelRefactored
 import com.example.inventory.ui.viewmodel.InventoryViewMode
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
@@ -75,7 +76,6 @@ fun InventoryListScreenWithMultiList(
     listViewModel: InventoryListViewModel,
     importViewModel: ImportViewModel,
     inventoryRepository: InventoryRepository,
-    importCoordinator: ImportCoordinator,
     showImport: Boolean = false,
     onNavigateCapture: () -> Unit,
     onNavigateAddItem: () -> Unit,
@@ -89,12 +89,12 @@ fun InventoryListScreenWithMultiList(
     tableState: LazyListState = rememberLazyListState(),
     horizontalScrollState: ScrollState = rememberScrollState()
 ) {
-    val inventoryState by inventoryViewModel.uiState.collectAsState()
-    val lists by listViewModel.lists.collectAsState()
-    val currentListId by listViewModel.currentListId.collectAsState()
-    val currentList by listViewModel.currentList.collectAsState()
-    val importProgress by importViewModel.progress.collectAsState()
-    val viewModeState by listViewModel.viewMode.collectAsState()
+    val inventoryState by inventoryViewModel.uiState.collectAsStateWithLifecycle()
+    val lists by listViewModel.lists.collectAsStateWithLifecycle()
+    val currentListId by listViewModel.currentListId.collectAsStateWithLifecycle()
+    val currentList by listViewModel.currentList.collectAsStateWithLifecycle()
+    val importProgress by importViewModel.progress.collectAsStateWithLifecycle()
+    val viewModeState by listViewModel.viewMode.collectAsStateWithLifecycle()
     
     val viewMode = if (isEditMode) InventoryViewMode.TABLE else viewModeState
     
@@ -115,10 +115,9 @@ fun InventoryListScreenWithMultiList(
         isImporting = importProgress.isImporting,
         onShowImportProgress = { uiState.showImportProgress = it }
     )
-    HandleCurrentListId(
-        currentListId = currentListId,
-        onUpdateCurrentListId = inventoryViewModel::updateCurrentListId
-    )
+    LaunchedEffect(listViewModel) {
+        inventoryViewModel.bindCurrentListId(listViewModel.currentListId)
+    }
     
     Scaffold(
         modifier = modifier,
@@ -202,7 +201,6 @@ fun InventoryListScreenWithMultiList(
         importViewModel = importViewModel,
         inventoryViewModel = inventoryViewModel,
         inventoryRepository = inventoryRepository,
-        importCoordinator = importCoordinator,
         context = context,
         importProgress = importProgress
     )
@@ -336,22 +334,20 @@ private fun InventoryListDialogHost(
     importViewModel: ImportViewModel,
     inventoryViewModel: InventoryViewModelRefactored,
     inventoryRepository: InventoryRepository,
-    importCoordinator: ImportCoordinator,
     context: android.content.Context,
     importProgress: com.example.inventory.ui.state.ImportProgress
 ) {
     val startImport: (Uri, FileType) -> Unit = { uri, fileType ->
-        handleImport(
-            uri,
-            fileType,
-            listViewModel,
-            importViewModel,
-            inventoryRepository,
-            importCoordinator,
-            context,
-            uiState.scope,
-            uiState.showMessage
-        )
+        uiState.scope.launch {
+            val listId = listViewModel.createList()
+            listViewModel.switchToList(listId)
+            importViewModel.startImportFromUri(
+                listId = listId,
+                uri = uri,
+                fileType = fileType,
+                contentResolver = context.contentResolver
+            )
+        }
     }
 
     CreateListBottomSheet(
@@ -427,7 +423,7 @@ private fun InventoryActionDialogs(
         editText = inventoryState.editText,
         onTextChange = inventoryViewModel::updateEditText,
         onSave = { inventoryViewModel.saveEdit() },
-        onDismiss = { inventoryViewModel.hideEdit() }
+        onDismiss = inventoryViewModel::dismissDialog
     )
 
     StockActionDialog(
@@ -437,7 +433,7 @@ private fun InventoryActionDialogs(
         onInbound = { inventoryViewModel.showRecordInput(StockAction.Inbound) },
         onOutbound = { inventoryViewModel.showRecordInput(StockAction.Outbound) },
         onCount = { inventoryViewModel.showRecordInput(StockAction.Count) },
-        onDismiss = { inventoryViewModel.hideStockActions() }
+        onDismiss = inventoryViewModel::dismissDialog
     )
 
     RecordInputDialog(
@@ -450,7 +446,7 @@ private fun InventoryActionDialogs(
         onOperatorChange = inventoryViewModel::updateRecordOperator,
         onRemarkChange = inventoryViewModel::updateRecordRemark,
         onSave = { inventoryViewModel.submitRecord() },
-        onDismiss = { inventoryViewModel.hideRecordInput() }
+        onDismiss = inventoryViewModel::dismissDialog
     )
 
     RecordDetailDialog(viewModel = inventoryViewModel)
@@ -505,9 +501,10 @@ private fun HandleImportDeepLink(
     showImport: Boolean,
     onShowCreateListSheet: (Boolean) -> Unit
 ) {
+    val onShowCreateListSheetState by rememberUpdatedState(onShowCreateListSheet)
     LaunchedEffect(showImport) {
         if (showImport) {
-            onShowCreateListSheet(true)
+            onShowCreateListSheetState(true)
         }
     }
 }
@@ -518,6 +515,8 @@ private fun HandleUiMessages(
     onClearMessage: () -> Unit,
     showMessage: (String) -> Unit
 ) {
+    val showMessageState by rememberUpdatedState(showMessage)
+    val onClearMessageState by rememberUpdatedState(onClearMessage)
     LaunchedEffect(message) {
         message?.let { uiMessage ->
             val text = when (uiMessage) {
@@ -526,8 +525,8 @@ private fun HandleUiMessages(
                 is UiMessage.Info -> uiMessage.text
                 is UiMessage.Warning -> uiMessage.text
             }
-            showMessage(text)
-            onClearMessage()
+            showMessageState(text)
+            onClearMessageState()
         }
     }
 }
@@ -537,18 +536,9 @@ private fun HandleImportProgress(
     isImporting: Boolean,
     onShowImportProgress: (Boolean) -> Unit
 ) {
+    val onShowImportProgressState by rememberUpdatedState(onShowImportProgress)
     LaunchedEffect(isImporting) {
-        onShowImportProgress(isImporting)
-    }
-}
-
-@Composable
-private fun HandleCurrentListId(
-    currentListId: Long?,
-    onUpdateCurrentListId: (Long?) -> Unit
-) {
-    LaunchedEffect(currentListId) {
-        onUpdateCurrentListId(currentListId)
+        onShowImportProgressState(isImporting)
     }
 }
 
@@ -560,9 +550,11 @@ private class InventoryListScreenUiState(
     var showDeleteDialog by mutableStateOf(false)
     var showImportProgress by mutableStateOf(false)
     var deleteListId by mutableStateOf<Long?>(null)
+    private var messageJob: Job? = null
 
     val showMessage: (String) -> Unit = { message ->
-        scope.launch { snackbarHostState.showSnackbar(message) }
+        messageJob?.cancel()
+        messageJob = scope.launch { snackbarHostState.showSnackbar(message) }
     }
 }
 
@@ -588,71 +580,6 @@ private fun rememberInventoryListScreenUiState(): InventoryListScreenUiState {
  * @param scope 协程作用域
  * @param showMessage 消息显示回调
  */
-private fun handleImport(
-    uri: Uri,
-    fileType: FileType,
-    listViewModel: InventoryListViewModel,
-    importViewModel: ImportViewModel,
-    inventoryRepository: com.example.inventory.data.repository.InventoryRepository,
-    importCoordinator: com.example.inventory.data.importer.ImportCoordinator,
-    context: android.content.Context,
-    scope: kotlinx.coroutines.CoroutineScope,
-    showMessage: (String) -> Unit
-) {
-    scope.launch {
-        try {
-            // 1. 创建新列表
-            val listId = listViewModel.createList()
-            
-            // 2. 切换到新列表
-            listViewModel.switchToList(listId)
-            
-            // 3. 读取文件内容
-            val extension = when (fileType) {
-                FileType.EXCEL -> "xlsx"
-                FileType.ACCESS -> "mdb"
-                FileType.DATABASE -> "db"
-            }
-            
-            // 使用 use 确保流正确关闭
-            context.contentResolver.openInputStream(uri)?.use { stream ->
-                // 4. 导入数据
-                val items = importCoordinator.importByExtension(extension, stream)
-                
-                if (items.isEmpty()) {
-                    showMessage("文件中没有有效数据")
-                    return@launch
-                }
-                
-                // 5. 批量导入，显示进度
-                val totalCount = items.size
-                val batchSize = 100
-                var importedCount = 0
-                
-                items.chunked(batchSize).forEach { batch ->
-                    // 设置 listId
-                    val itemsWithListId = batch.map { it.copy(listId = listId) }
-                    inventoryRepository.batchAddItems(itemsWithListId)
-                    
-                    importedCount += batch.size
-                    
-                    // 避免阻塞UI
-                    kotlinx.coroutines.delay(50)
-                }
-                
-                showMessage("成功导入 $totalCount 个商品")
-            } ?: run {
-                showMessage("无法打开文件")
-            }
-            
-        } catch (e: java.io.IOException) {
-            showMessage("文件读取失败: ${e.message}")
-        } catch (e: Exception) {
-            showMessage("导入失败: ${e.message}")
-        }
-    }
-}
-
 // ==================== Preview 预览 ====================
 
 /**

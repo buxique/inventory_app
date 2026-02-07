@@ -11,20 +11,21 @@ import com.example.inventory.data.repository.InventoryRepository
 import com.example.inventory.ui.state.InventoryUiState
 import com.example.inventory.ui.state.StockAction
 import com.example.inventory.ui.state.UiMessage
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.InputStream
 
 /**
@@ -63,6 +64,39 @@ class InventoryViewModelRefactored(
     
     private val localState = MutableStateFlow(InventoryUiState())
     private val currentListId = MutableStateFlow<Long?>(null)
+    private var currentListJob: Job? = null
+    private val dialogActions = DialogActionsUseCase(
+        dialogManager = dialogManager,
+        localState = localState,
+        searchViewModel = searchViewModel,
+        categoryViewModel = categoryViewModel,
+        itemOperationViewModel = itemOperationViewModel,
+        stockRecordViewModel = stockRecordViewModel,
+        scope = viewModelScope,
+        currentListIdProvider = { currentListId.value },
+        setMessage = ::setMessage
+    )
+    private val itemEditActions = ItemEditActionsUseCase(
+        inventoryRepository = inventoryRepository,
+        itemOperationViewModel = itemOperationViewModel,
+        dialogManager = dialogManager,
+        scope = viewModelScope,
+        currentListIdProvider = { currentListId.value },
+        setMessage = ::setMessage
+    )
+    private val formActions = FormActionsUseCase(
+        itemOperationViewModel = itemOperationViewModel,
+        currentListIdProvider = { currentListId.value },
+        setMessage = ::setMessage,
+        scope = viewModelScope
+    )
+    private val importItemsUseCase = ImportItemsUseCase(
+        importCoordinator = importCoordinator,
+        itemOperationViewModel = itemOperationViewModel,
+        scope = viewModelScope,
+        currentListIdProvider = { currentListId.value },
+        setMessage = ::setMessage
+    )
     private val dialogBase = combine(
         dialogManager.currentDialog,
         dialogManager.selectedItem,
@@ -127,220 +161,115 @@ class InventoryViewModelRefactored(
         currentListId.value = listId
     }
     
+    fun bindCurrentListId(listIdFlow: Flow<Long?>) {
+        if (currentListJob?.isActive == true) return
+        currentListJob = listIdFlow
+            .onEach { updateCurrentListId(it) }
+            .launchIn(viewModelScope)
+    }
+    
     // ==================== 搜索相关 ====================
     
     fun showSearchDialog() {
-        dialogManager.showSearchDialog()
+        dialogActions.showSearchDialog()
     }
     
     fun updateSearchQuery(query: String) {
-        localState.update { it.copy(searchQuery = query) }
+        dialogActions.updateSearchQuery(query)
     }
     
     fun applySearch() {
-        val query = localState.value.searchQuery.trim()
-        searchViewModel.updateSearchQuery(query)
-        dialogManager.dismissDialog()
+        dialogActions.applySearch()
     }
     
     fun clearSearch() {
-        searchViewModel.clearSearch()
-        localState.update { it.copy(searchQuery = "") }
-        dialogManager.dismissDialog()
+        dialogActions.clearSearch()
     }
     
     // ==================== 分类相关 ====================
     
     fun showCategoryDialog() {
-        dialogManager.showCategoryDialog()
+        dialogActions.showCategoryDialog()
     }
     
     fun selectCategory(categoryId: Long?) {
-        searchViewModel.selectCategory(categoryId)
-        dialogManager.dismissDialog()
+        dialogActions.selectCategory(categoryId)
     }
     
     fun addCategory(name: String) {
-        viewModelScope.launch {
-            val success = categoryViewModel.addCategory(name)
-            if (success) {
-                setMessage(UiMessage.Success("分类已添加"))
-            } else {
-                setMessage(UiMessage.Warning("分类名称不能为空"))
-            }
-        }
+        dialogActions.addCategory(name)
     }
     
     // ==================== 手动添加商品 ====================
     
     fun showManualAddDialog() {
-        dialogManager.showManualAddDialog()
+        dialogActions.showManualAddDialog()
     }
     
     fun updateManualAddForm(update: (com.example.inventory.ui.state.ManualAddForm) -> com.example.inventory.ui.state.ManualAddForm) {
-        dialogManager.updateManualAddForm(update)
+        dialogActions.updateManualAddForm(update)
     }
     
     fun saveManualAdd() {
-        val form = dialogManager.manualAddForm.value
-        val name = form.name.trim()
-        val barcode = form.barcode.trim()
-        
-        if (name.isBlank() && barcode.isBlank()) {
-            setMessage(UiMessage.Warning("名称或条码至少填写一项"))
-            return
-        }
-        val listId = currentListId.value
-        if (listId == null) {
-            setMessage(UiMessage.Warning("未选择列表"))
-            return
-        }
-        val quantity = form.quantity.toIntOrNull() ?: 0
-        val item = InventoryItemEntity(
-            listId = listId,
-            name = name,
-            brand = form.brand.trim(),
-            model = form.model.trim(),
-            parameters = form.parameters.trim(),
-            barcode = barcode,
-            quantity = quantity.coerceAtLeast(0),
-            remark = form.remark.trim()
-        )
-        
-        viewModelScope.launch {
-            val result = itemOperationViewModel.addItem(item)
-            if (result.isSuccess) {
-                dialogManager.resetManualAddForm()
-                dialogManager.dismissDialog()
-                setMessage(UiMessage.Success("已添加商品"))
-            } else {
-                setMessage(UiMessage.Error("添加失败: ${result.exceptionOrNull()?.message}"))
-            }
-        }
+        dialogActions.saveManualAdd()
     }
     
     // ==================== 编辑商品 ====================
     
     fun showEdit(item: InventoryItemEntity) {
-        dialogManager.showEditDialog(item)
+        dialogActions.showEdit(item)
     }
     
     fun updateEditText(text: String) {
-        dialogManager.updateEditText(text)
+        dialogActions.updateEditText(text)
     }
     
     fun saveEdit() {
-        val current = dialogManager.selectedItem.value ?: return
-        val newName = dialogManager.editText.value.trim()
-        
-        if (newName.isBlank()) {
-            setMessage(UiMessage.Warning("商品名称不能为空"))
-            return
-        }
-        
-        viewModelScope.launch {
-            val updated = current.copy(name = newName)
-            val result = itemOperationViewModel.updateItem(updated)
-            if (result.isSuccess) {
-                dialogManager.setSelectedItem(updated)
-                dialogManager.dismissDialog()
-                setMessage(UiMessage.Success("已更新商品"))
-            } else {
-                setMessage(UiMessage.Error("更新失败: ${result.exceptionOrNull()?.message}"))
-            }
-        }
+        dialogActions.saveEdit()
     }
     
     // ==================== 删除商品 ====================
     
     fun requestDeleteItem(item: InventoryItemEntity) {
-        dialogManager.showDeleteConfirmDialog(item)
+        dialogActions.requestDeleteItem(item)
     }
     
     fun confirmDeleteItem() {
-        val item = dialogManager.pendingDeleteItem.value ?: return
-        viewModelScope.launch {
-            val result = itemOperationViewModel.deleteItem(item.id)
-            if (result.isSuccess) {
-                dialogManager.clearPendingDelete()
-                dialogManager.dismissDialog()
-                setMessage(UiMessage.Success("已删除商品"))
-            } else {
-                setMessage(UiMessage.Error("删除失败: ${result.exceptionOrNull()?.message}"))
-            }
-        }
+        dialogActions.confirmDeleteItem()
     }
     
     fun cancelDeleteItem() {
-        dialogManager.clearPendingDelete()
-        dialogManager.dismissDialog()
+        dialogActions.cancelDeleteItem()
     }
     
     // ==================== 库存操作 ====================
     
     fun showStockActions(item: InventoryItemEntity) {
-        dialogManager.showStockActionDialog(item)
+        dialogActions.showStockActions(item)
     }
     
     fun showRecordInput(action: StockAction) {
-        dialogManager.showRecordInputDialog(action)
-        if (action == StockAction.Count) {
-            loadRecordsForSelected()
-        }
+        dialogActions.showRecordInput(action)
     }
     
     fun updateRecordQuantity(value: String) {
-        dialogManager.updateStockActionQuantity(value)
+        dialogActions.updateRecordQuantity(value)
     }
     
     fun updateRecordOperator(value: String) {
-        dialogManager.updateStockActionOperator(value)
+        dialogActions.updateRecordOperator(value)
     }
     
     fun updateRecordRemark(value: String) {
-        dialogManager.updateStockActionRemark(value)
+        dialogActions.updateRecordRemark(value)
     }
     
     fun submitRecord() {
-        val item = dialogManager.selectedItem.value ?: return
-        val state = dialogManager.stockActionState.value
-        val quantity = state.quantity.toIntOrNull()
-        
-        if (quantity == null || quantity <= 0) {
-            setMessage(UiMessage.Warning("请输入有效的数量"))
-            return
-        }
-        
-        viewModelScope.launch {
-            val result = stockRecordViewModel.addRecord(
-                item = item,
-                action = state.action,
-                quantity = quantity,
-                operatorName = state.operator,
-                remark = state.remark
-            )
-            
-            if (result.isSuccess) {
-                val updatedItem = result.getOrNull()
-                if (updatedItem != null) {
-                    dialogManager.setSelectedItem(updatedItem)
-                    dialogManager.resetStockActionState()
-                    dialogManager.showRecordDialog()
-                    setMessage(UiMessage.Success("操作成功"))
-                } else {
-                    setMessage(UiMessage.Warning("操作失败"))
-                }
-            } else {
-                val error = result.exceptionOrNull()
-                setMessage(UiMessage.Warning(error?.message ?: "操作失败"))
-            }
-        }
+        dialogActions.submitRecord()
     }
     
     fun loadRecordsForSelected() {
-        val item = dialogManager.selectedItem.value ?: return
-        stockRecordViewModel.loadRecords(item.id)
-        dialogManager.showRecordDialog()
+        dialogActions.loadRecordsForSelected()
     }
     
     // ==================== 复制粘贴 ====================
@@ -369,58 +298,17 @@ class InventoryViewModelRefactored(
     // ==================== 导入 ====================
     
     fun toggleImportSheet(show: Boolean) {
-        if (show) {
-            dialogManager.showImportSheet()
-        } else {
-            dialogManager.dismissDialog()
-        }
+        dialogActions.toggleImportSheet(show)
     }
     
     fun importItems(extension: String, stream: InputStream) {
-        val listId = currentListId.value
-        if (listId == null) {
-            setMessage(UiMessage.Warning("未选择列表"))
-            return
-        }
-        flow { emit(importCoordinator.importByExtension(extension, stream)) }
-            .flowOn(Dispatchers.IO)
-            .onEach { items ->
-                if (items.isNotEmpty()) {
-                    val itemsWithListId = items.map { it.copy(listId = listId) }
-                    val result = itemOperationViewModel.batchAddItems(itemsWithListId)
-                    if (result.isSuccess) {
-                        setMessage(UiMessage.Success("导入成功，共${items.size}条"))
-                    } else {
-                        setMessage(UiMessage.Error("导入失败"))
-                    }
-                } else {
-                    setMessage(UiMessage.Warning("未找到可导入的数据"))
-                }
-            }
-            .catch { e -> setMessage(UiMessage.Error("导入失败: ${e.message}")) }
-            .launchIn(viewModelScope)
+        importItemsUseCase.importItems(extension, stream)
     }
     
     // ==================== 对话框管理 ====================
     
     fun dismissDialog() {
-        dialogManager.dismissDialog()
-    }
-    
-    fun hideEdit() {
-        dialogManager.dismissDialog()
-    }
-    
-    fun hideRecordDialog() {
-        dialogManager.dismissDialog()
-    }
-    
-    fun hideStockActions() {
-        dialogManager.dismissDialog()
-    }
-    
-    fun hideRecordInput() {
-        dialogManager.dismissDialog()
+        dialogActions.dismissDialog()
     }
     
     // ==================== 其他 ====================
@@ -454,8 +342,334 @@ class InventoryViewModelRefactored(
      * @param text OCR 识别的文本
      */
     fun applyOcrTextToItem(itemId: Long, text: String) {
+        itemEditActions.applyOcrTextToItem(itemId, text)
+    }
+    
+    /**
+     * 确认自动填充的商品信息
+     * 
+     * @param item 自动填充后的商品实体
+     */
+    fun confirmAutoFill(item: InventoryItemEntity) {
+        itemEditActions.confirmAutoFill(item)
+    }
+
+    fun showAutoFillDialogFromOcr(groups: List<OcrGroup>) {
+        itemEditActions.showAutoFillDialogFromOcr(groups)
+    }
+    
+    /**
+     * 更新商品的指定字段
+     * 
+     * @param itemId 商品 ID
+     * @param field 字段名（name, brand, model, parameters, quantity）
+     * @param value 新值
+     */
+    fun updateItemField(itemId: Long, field: String, value: String) {
+        itemEditActions.updateItemField(itemId, field, value)
+    }
+    
+    // ==================== 表单添加 ====================
+    
+    /**
+     * 从表单数据添加商品
+     * 
+     * @param formData 表单数据
+     */
+    fun addItemFromForm(formData: com.example.inventory.ui.screens.AddItemFormData) {
+        formActions.addItemFromForm(formData)
+    }
+    
+    // ==================== 数据检查 ====================
+    
+    /**
+     * 检查是否有库存数据
+     * 
+     * @return true 表示有数据，false 表示无数据
+     */
+    suspend fun checkHasData(): Boolean {
+        return formActions.checkHasData(inventoryRepository)
+    }
+}
+
+private class ImportItemsUseCase(
+    private val importCoordinator: ImportCoordinator,
+    private val itemOperationViewModel: ItemOperationViewModel,
+    private val scope: CoroutineScope,
+    private val currentListIdProvider: () -> Long?,
+    private val setMessage: (UiMessage) -> Unit
+) {
+    fun importItems(extension: String, stream: InputStream) {
+        val listId = currentListIdProvider()
+        if (listId == null) {
+            setMessage(UiMessage.Warning("未选择列表"))
+            return
+        }
+        scope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    stream.use { inputStream ->
+                        val items = importCoordinator.importByExtension(extension, inputStream)
+                        ensureActive()
+                        if (items.isEmpty()) {
+                            return@withContext Result.failure<List<InventoryItemEntity>>(
+                                IllegalArgumentException("未找到可导入的数据")
+                            )
+                        }
+                        val itemsWithListId = items.map { it.copy(listId = listId) }
+                        val batchResult = itemOperationViewModel.batchAddItems(itemsWithListId)
+                        if (batchResult.isSuccess) {
+                            Result.success(items)
+                        } else {
+                            Result.failure(IllegalStateException("导入失败"))
+                        }
+                    }
+                }
+            }.getOrElse { Result.failure(it) }
+            result.fold(
+                onSuccess = { items ->
+                    setMessage(UiMessage.Success("导入成功，共${items.size}条"))
+                },
+                onFailure = { e ->
+                    setMessage(UiMessage.Error(e.message ?: "导入失败"))
+                }
+            )
+        }
+    }
+}
+
+private class DialogActionsUseCase(
+    private val dialogManager: DialogStateManager,
+    private val localState: MutableStateFlow<InventoryUiState>,
+    private val searchViewModel: SearchViewModel,
+    private val categoryViewModel: CategoryViewModel,
+    private val itemOperationViewModel: ItemOperationViewModel,
+    private val stockRecordViewModel: StockRecordViewModel,
+    private val scope: CoroutineScope,
+    private val currentListIdProvider: () -> Long?,
+    private val setMessage: (UiMessage) -> Unit
+) {
+    fun showSearchDialog() {
+        dialogManager.showSearchDialog()
+    }
+    
+    fun updateSearchQuery(query: String) {
+        localState.update { it.copy(searchQuery = query) }
+    }
+    
+    fun applySearch() {
+        val query = localState.value.searchQuery.trim()
+        searchViewModel.updateSearchQuery(query)
+        dialogManager.dismissDialog()
+    }
+    
+    fun clearSearch() {
+        searchViewModel.clearSearch()
+        localState.update { it.copy(searchQuery = "") }
+        dialogManager.dismissDialog()
+    }
+    
+    fun showCategoryDialog() {
+        dialogManager.showCategoryDialog()
+    }
+    
+    fun selectCategory(categoryId: Long?) {
+        searchViewModel.selectCategory(categoryId)
+        dialogManager.dismissDialog()
+    }
+    
+    fun addCategory(name: String) {
+        scope.launch {
+            val success = categoryViewModel.addCategory(name)
+            if (success) {
+                setMessage(UiMessage.Success("分类已添加"))
+            } else {
+                setMessage(UiMessage.Warning("分类名称不能为空"))
+            }
+        }
+    }
+    
+    fun showManualAddDialog() {
+        dialogManager.showManualAddDialog()
+    }
+    
+    fun updateManualAddForm(update: (com.example.inventory.ui.state.ManualAddForm) -> com.example.inventory.ui.state.ManualAddForm) {
+        dialogManager.updateManualAddForm(update)
+    }
+    
+    fun saveManualAdd() {
+        val form = dialogManager.manualAddForm.value
+        val name = form.name.trim()
+        val barcode = form.barcode.trim()
+        if (name.isBlank() && barcode.isBlank()) {
+            setMessage(UiMessage.Warning("名称或条码至少填写一项"))
+            return
+        }
+        val listId = currentListIdProvider()
+        if (listId == null) {
+            setMessage(UiMessage.Warning("未选择列表"))
+            return
+        }
+        val quantity = form.quantity.toIntOrNull() ?: 0
+        val item = InventoryItemEntity(
+            listId = listId,
+            name = name,
+            brand = form.brand.trim(),
+            model = form.model.trim(),
+            parameters = form.parameters.trim(),
+            barcode = barcode,
+            quantity = quantity.coerceAtLeast(0),
+            remark = form.remark.trim()
+        )
+        scope.launch {
+            val result = itemOperationViewModel.addItem(item)
+            if (result.isSuccess) {
+                dialogManager.resetManualAddForm()
+                dialogManager.dismissDialog()
+                setMessage(UiMessage.Success("已添加商品"))
+            } else {
+                setMessage(UiMessage.Error("添加失败: ${result.exceptionOrNull()?.message}"))
+            }
+        }
+    }
+    
+    fun showEdit(item: InventoryItemEntity) {
+        dialogManager.showEditDialog(item)
+    }
+    
+    fun updateEditText(text: String) {
+        dialogManager.updateEditText(text)
+    }
+    
+    fun saveEdit() {
+        val current = dialogManager.selectedItem.value ?: return
+        val newName = dialogManager.editText.value.trim()
+        if (newName.isBlank()) {
+            setMessage(UiMessage.Warning("商品名称不能为空"))
+            return
+        }
+        scope.launch {
+            val updated = current.copy(name = newName)
+            val result = itemOperationViewModel.updateItem(updated)
+            if (result.isSuccess) {
+                dialogManager.setSelectedItem(updated)
+                dialogManager.dismissDialog()
+                setMessage(UiMessage.Success("已更新商品"))
+            } else {
+                setMessage(UiMessage.Error("更新失败: ${result.exceptionOrNull()?.message}"))
+            }
+        }
+    }
+    
+    fun requestDeleteItem(item: InventoryItemEntity) {
+        dialogManager.showDeleteConfirmDialog(item)
+    }
+    
+    fun confirmDeleteItem() {
+        val item = dialogManager.pendingDeleteItem.value ?: return
+        scope.launch {
+            val result = itemOperationViewModel.deleteItem(item.id)
+            if (result.isSuccess) {
+                dialogManager.clearPendingDelete()
+                dialogManager.dismissDialog()
+                setMessage(UiMessage.Success("已删除商品"))
+            } else {
+                setMessage(UiMessage.Error("删除失败: ${result.exceptionOrNull()?.message}"))
+            }
+        }
+    }
+    
+    fun cancelDeleteItem() {
+        dialogManager.clearPendingDelete()
+        dialogManager.dismissDialog()
+    }
+    
+    fun showStockActions(item: InventoryItemEntity) {
+        dialogManager.showStockActionDialog(item)
+    }
+    
+    fun showRecordInput(action: StockAction) {
+        dialogManager.showRecordInputDialog(action)
+        if (action == StockAction.Count) {
+            loadRecordsForSelected()
+        }
+    }
+    
+    fun updateRecordQuantity(value: String) {
+        dialogManager.updateStockActionQuantity(value)
+    }
+    
+    fun updateRecordOperator(value: String) {
+        dialogManager.updateStockActionOperator(value)
+    }
+    
+    fun updateRecordRemark(value: String) {
+        dialogManager.updateStockActionRemark(value)
+    }
+    
+    fun submitRecord() {
+        val item = dialogManager.selectedItem.value ?: return
+        val state = dialogManager.stockActionState.value
+        val quantity = state.quantity.toIntOrNull()
+        if (quantity == null || quantity <= 0) {
+            setMessage(UiMessage.Warning("请输入有效的数量"))
+            return
+        }
+        scope.launch {
+            val result = stockRecordViewModel.addRecord(
+                item = item,
+                action = state.action,
+                quantity = quantity,
+                operatorName = state.operator,
+                remark = state.remark
+            )
+            if (result.isSuccess) {
+                val updatedItem = result.getOrNull()
+                if (updatedItem != null) {
+                    dialogManager.setSelectedItem(updatedItem)
+                    dialogManager.resetStockActionState()
+                    dialogManager.showRecordDialog()
+                    setMessage(UiMessage.Success("操作成功"))
+                } else {
+                    setMessage(UiMessage.Warning("操作失败"))
+                }
+            } else {
+                val error = result.exceptionOrNull()
+                setMessage(UiMessage.Warning(error?.message ?: "操作失败"))
+            }
+        }
+    }
+    
+    fun loadRecordsForSelected() {
+        val item = dialogManager.selectedItem.value ?: return
+        stockRecordViewModel.loadRecords(item.id)
+        dialogManager.showRecordDialog()
+    }
+    
+    fun toggleImportSheet(show: Boolean) {
+        if (show) {
+            dialogManager.showImportSheet()
+        } else {
+            dialogManager.dismissDialog()
+        }
+    }
+    
+    fun dismissDialog() {
+        dialogManager.dismissDialog()
+    }
+}
+
+private class ItemEditActionsUseCase(
+    private val inventoryRepository: InventoryRepository,
+    private val itemOperationViewModel: ItemOperationViewModel,
+    private val dialogManager: DialogStateManager,
+    private val scope: CoroutineScope,
+    private val currentListIdProvider: () -> Long?,
+    private val setMessage: (UiMessage) -> Unit
+) {
+    fun applyOcrTextToItem(itemId: Long, text: String) {
         if (itemId <= 0L || text.isBlank()) return
-        viewModelScope.launch {
+        scope.launch {
             val item = inventoryRepository.getItemsByIds(listOf(itemId)).firstOrNull()
             if (item != null) {
                 dialogManager.showEditDialog(item)
@@ -466,13 +680,8 @@ class InventoryViewModelRefactored(
         }
     }
     
-    /**
-     * 确认自动填充的商品信息
-     * 
-     * @param item 自动填充后的商品实体
-     */
     fun confirmAutoFill(item: InventoryItemEntity) {
-        viewModelScope.launch {
+        scope.launch {
             val result = itemOperationViewModel.addItem(item)
             if (result.isSuccess) {
                 setMessage(UiMessage.Success("已添加商品：${item.name}"))
@@ -482,9 +691,9 @@ class InventoryViewModelRefactored(
             }
         }
     }
-
+    
     fun showAutoFillDialogFromOcr(groups: List<OcrGroup>) {
-        val listId = currentListId.value
+        val listId = currentListIdProvider()
         if (listId == null) {
             setMessage(UiMessage.Warning("未选择列表"))
             return
@@ -514,18 +723,10 @@ class InventoryViewModelRefactored(
         dialogManager.showAutoFillDialog()
     }
     
-    /**
-     * 更新商品的指定字段
-     * 
-     * @param itemId 商品 ID
-     * @param field 字段名（name, brand, model, parameters, quantity）
-     * @param value 新值
-     */
     fun updateItemField(itemId: Long, field: String, value: String) {
         if (itemId <= 0L) return
-        viewModelScope.launch {
+        scope.launch {
             val item = inventoryRepository.getItemsByIds(listOf(itemId)).firstOrNull() ?: return@launch
-            
             val newItem = when (field) {
                 "name" -> item.copy(name = value)
                 "brand" -> item.copy(brand = value)
@@ -537,7 +738,6 @@ class InventoryViewModelRefactored(
                 }
                 else -> item
             }
-            
             if (newItem != item) {
                 val result = itemOperationViewModel.updateItem(newItem)
                 if (result.isSuccess) {
@@ -546,17 +746,17 @@ class InventoryViewModelRefactored(
             }
         }
     }
-    
-    // ==================== 表单添加 ====================
-    
-    /**
-     * 从表单数据添加商品
-     * 
-     * @param formData 表单数据
-     */
+}
+
+private class FormActionsUseCase(
+    private val itemOperationViewModel: ItemOperationViewModel,
+    private val currentListIdProvider: () -> Long?,
+    private val setMessage: (UiMessage) -> Unit,
+    private val scope: CoroutineScope
+) {
     fun addItemFromForm(formData: com.example.inventory.ui.screens.AddItemFormData) {
-        viewModelScope.launch {
-            val listId = currentListId.value
+        scope.launch {
+            val listId = currentListIdProvider()
             if (listId == null) {
                 setMessage(UiMessage.Warning("未选择列表"))
                 return@launch
@@ -587,14 +787,7 @@ class InventoryViewModelRefactored(
         }
     }
     
-    // ==================== 数据检查 ====================
-    
-    /**
-     * 检查是否有库存数据
-     * 
-     * @return true 表示有数据，false 表示无数据
-     */
-    suspend fun checkHasData(): Boolean {
+    suspend fun checkHasData(inventoryRepository: InventoryRepository): Boolean {
         return try {
             val items = inventoryRepository.getAllItemsSnapshot()
             items.isNotEmpty()

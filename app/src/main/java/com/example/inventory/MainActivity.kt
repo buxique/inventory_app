@@ -8,10 +8,11 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.inventory.ui.InventoryApp
 import com.example.inventory.ui.theme.InventoryAppTheme
 import com.example.inventory.ui.viewmodel.AppViewModelFactory
@@ -35,12 +36,14 @@ class MainActivity : ComponentActivity() {
         
         setContent {
             val context = LocalContext.current
-            val darkMode by context.settingsDataStore.data
-                .map { prefs -> prefs[PrefsKeys.DARK_MODE_PREF_KEY] ?: false }
-                .collectAsState(initial = false)
-            val fontScale by context.settingsDataStore.data
-                .map { prefs -> prefs[PrefsKeys.FONT_SCALE_PREF_KEY] ?: 1.0f }
-                .collectAsState(initial = 1.0f)
+            val darkModeFlow = remember(context) {
+                context.settingsDataStore.data.map { prefs -> prefs[PrefsKeys.DARK_MODE_PREF_KEY] ?: false }
+            }
+            val fontScaleFlow = remember(context) {
+                context.settingsDataStore.data.map { prefs -> prefs[PrefsKeys.FONT_SCALE_PREF_KEY] ?: 1.0f }
+            }
+            val darkMode by darkModeFlow.collectAsStateWithLifecycle(initialValue = false)
+            val fontScale by fontScaleFlow.collectAsStateWithLifecycle(initialValue = 1.0f)
             
             // 使用应用主题，应用字号缩放和夜间模式
             InventoryAppTheme(

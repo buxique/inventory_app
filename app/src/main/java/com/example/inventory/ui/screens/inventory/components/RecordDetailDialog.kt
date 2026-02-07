@@ -9,11 +9,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.inventory.ui.state.DialogState
 import com.example.inventory.ui.viewmodel.InventoryViewModelRefactored
 
@@ -21,12 +21,12 @@ import com.example.inventory.ui.viewmodel.InventoryViewModelRefactored
 fun RecordDetailDialog(
     viewModel: InventoryViewModelRefactored
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     if (uiState.dialogState != DialogState.RecordDialog) return
 
     AlertDialog(
-        onDismissRequest = { viewModel.hideRecordDialog() },
+        onDismissRequest = viewModel::dismissDialog,
         title = { Text(text = "库存记录") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -49,7 +49,7 @@ fun RecordDetailDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { viewModel.hideRecordDialog() }) {
+            TextButton(onClick = viewModel::dismissDialog) {
                 Text(text = "关闭")
             }
         }

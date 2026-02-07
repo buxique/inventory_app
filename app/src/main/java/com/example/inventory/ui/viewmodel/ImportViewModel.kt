@@ -1,5 +1,6 @@
 package com.example.inventory.ui.viewmodel
 
+import android.content.ContentResolver
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -10,6 +11,7 @@ import com.example.inventory.ui.state.ImportProgress
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,6 +33,11 @@ class ImportViewModel(
     val progress: StateFlow<ImportProgress> = _progress.asStateFlow()
     
     private var importJob: Job? = null
+
+    companion object {
+        private const val IMPORT_BATCH_SIZE = 100
+        private const val IMPORT_DELAY_MS = 50L
+    }
     
     /**
      * 从输入流导入文件到指定列表
@@ -65,10 +72,11 @@ class ImportViewModel(
             
             // 批量导入，显示进度
             val totalCount = items.size
-            val batchSize = 100
+            val batchSize = IMPORT_BATCH_SIZE
             var importedCount = 0
             
             items.chunked(batchSize).forEach { batch ->
+                ensureActive()
                 // 设置 listId
                 val itemsWithListId = batch.map { it.copy(listId = listId) }
                 inventoryRepository.batchAddItems(itemsWithListId)
@@ -82,7 +90,7 @@ class ImportViewModel(
                 )
                 
                 // 避免阻塞UI
-                delay(50)
+                delay(IMPORT_DELAY_MS)
             }
             
             _progress.value = ImportProgress(isImporting = false)
@@ -94,6 +102,27 @@ class ImportViewModel(
                 error = e.message ?: "导入失败"
             )
             Result.failure(e)
+        }
+    }
+
+    fun startImportFromUri(
+        listId: Long,
+        uri: Uri,
+        fileType: FileType,
+        contentResolver: ContentResolver
+    ) {
+        importJob?.cancel()
+        importJob = viewModelScope.launch {
+            val stream = contentResolver.openInputStream(uri)
+            if (stream == null) {
+                _progress.value = ImportProgress(isImporting = false, error = "无法打开文件")
+                return@launch
+            }
+            stream.use { inputStream ->
+                importFromStream(listId, inputStream, fileType)
+            }
+        }.also { job ->
+            job.invokeOnCompletion { importJob = null }
         }
     }
     

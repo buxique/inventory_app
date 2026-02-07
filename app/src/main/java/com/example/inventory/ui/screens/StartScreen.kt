@@ -31,12 +31,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +54,7 @@ import com.example.inventory.ui.screens.inventory.components.CreateListBottomShe
 import com.example.inventory.ui.viewmodel.InventoryListViewModel
 import com.example.inventory.util.PrefsKeys
 import com.example.inventory.util.settingsDataStore
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
@@ -67,17 +68,18 @@ fun StartScreen(
     onImportDatabase: (Uri) -> Unit,
     onSelectList: (Long) -> Unit
 ) {
-    var showSheet by remember { mutableStateOf(false) }
+    var showSheet by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     
     // 获取所有列表
-    val lists by listViewModel.lists.collectAsState()
+    val lists by listViewModel.lists.collectAsStateWithLifecycle()
     
     // 检查是否首次启动（是否已选择过语言）
-    val languageTag by context.settingsDataStore.data
-        .map { prefs -> prefs[PrefsKeys.LANGUAGE_PREF_KEY] }
-        .collectAsState(initial = null)
+    val languageFlow = remember(context) {
+        context.settingsDataStore.data.map { prefs -> prefs[PrefsKeys.LANGUAGE_PREF_KEY] }
+    }
+    val languageTag by languageFlow.collectAsStateWithLifecycle(initialValue = null)
     val showLanguageSelector by remember(languageTag) {
         derivedStateOf { languageTag == null }
     }
@@ -90,7 +92,7 @@ fun StartScreen(
     ) {
         if (showLanguageSelector) {
             // 首次启动：显示语言选择界面
-            var selectedLanguage by remember(languageTag) { mutableStateOf(languageTag ?: "zh") }
+            var selectedLanguage by rememberSaveable(languageTag) { mutableStateOf(languageTag ?: "zh") }
             
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,

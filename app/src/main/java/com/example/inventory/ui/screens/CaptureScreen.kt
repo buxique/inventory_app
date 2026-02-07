@@ -365,7 +365,6 @@ fun CaptureScreen(
                 listViewModel = listViewModel,
                 importViewModel = importViewModel,
                 inventoryRepository = inventoryRepository,
-                importCoordinator = importCoordinator,
                 dropTargets = dropTargets,
                 cellDropTargets = cellDropTargets,
                 highlightedCell = highlightedCell,
