@@ -63,27 +63,31 @@ class InventoryViewModelRefactored(
     
     private val localState = MutableStateFlow(InventoryUiState())
     private val currentListId = MutableStateFlow<Long?>(null)
-    private val dialogStateBundle = combine(
+    private val dialogBase = combine(
         dialogManager.currentDialog,
         dialogManager.selectedItem,
-        dialogManager.editText,
+        dialogManager.editText
+    ) { dialogState, selectedItem, editText ->
+        Triple(dialogState, selectedItem, editText)
+    }
+    private val dialogExtras = combine(
         dialogManager.pendingDeleteItem,
         dialogManager.manualAddForm,
         dialogManager.stockActionState
-    ) { values ->
-        val dialogState = values[0] as com.example.inventory.ui.state.DialogState
-        val selectedItem = values[1] as InventoryItemEntity?
-        val editText = values[2] as String
-        val pendingDeleteItem = values[3] as InventoryItemEntity?
-        val manualAddForm = values[4] as com.example.inventory.ui.state.ManualAddForm
-        val stockActionState = values[5] as com.example.inventory.ui.state.StockActionState
+    ) { pendingDeleteItem, manualAddForm, stockActionState ->
+        Triple(pendingDeleteItem, manualAddForm, stockActionState)
+    }
+    private val dialogStateBundle = combine(
+        dialogBase,
+        dialogExtras
+    ) { base, extras ->
         DialogStateBundle(
-            dialogState = dialogState,
-            selectedItem = selectedItem,
-            editText = editText,
-            pendingDeleteItem = pendingDeleteItem,
-            manualAddForm = manualAddForm,
-            stockActionState = stockActionState
+            dialogState = base.first,
+            selectedItem = base.second,
+            editText = base.third,
+            pendingDeleteItem = extras.first,
+            manualAddForm = extras.second,
+            stockActionState = extras.third
         )
     }
     val uiState: StateFlow<InventoryUiState> = combine(

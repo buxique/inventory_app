@@ -340,6 +340,20 @@ private fun InventoryListDialogHost(
     context: android.content.Context,
     importProgress: com.example.inventory.ui.state.ImportProgress
 ) {
+    val startImport: (Uri, FileType) -> Unit = { uri, fileType ->
+        handleImport(
+            uri,
+            fileType,
+            listViewModel,
+            importViewModel,
+            inventoryRepository,
+            importCoordinator,
+            context,
+            uiState.scope,
+            uiState.showMessage
+        )
+    }
+
     CreateListBottomSheet(
         visible = uiState.showCreateListSheet,
         onDismiss = { uiState.showCreateListSheet = false },
@@ -350,45 +364,9 @@ private fun InventoryListDialogHost(
                 uiState.showMessage("已创建新列表")
             }
         },
-        onImportExcel = { uri ->
-            handleImport(
-                uri,
-                FileType.EXCEL,
-                listViewModel,
-                importViewModel,
-                inventoryRepository,
-                importCoordinator,
-                context,
-                uiState.scope,
-                uiState.showMessage
-            )
-        },
-        onImportAccess = { uri ->
-            handleImport(
-                uri,
-                FileType.ACCESS,
-                listViewModel,
-                importViewModel,
-                inventoryRepository,
-                importCoordinator,
-                context,
-                uiState.scope,
-                uiState.showMessage
-            )
-        },
-        onImportDatabase = { uri ->
-            handleImport(
-                uri,
-                FileType.DATABASE,
-                listViewModel,
-                importViewModel,
-                inventoryRepository,
-                importCoordinator,
-                context,
-                uiState.scope,
-                uiState.showMessage
-            )
-        }
+        onImportExcel = { uri -> startImport(uri, FileType.EXCEL) },
+        onImportAccess = { uri -> startImport(uri, FileType.ACCESS) },
+        onImportDatabase = { uri -> startImport(uri, FileType.DATABASE) }
     )
 
     uiState.deleteListId?.let { listId ->

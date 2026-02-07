@@ -9,11 +9,15 @@ import com.example.inventory.data.repository.OcrRepository
 import com.example.inventory.ui.state.CaptureUiState
 import com.example.inventory.ui.state.ProcessingState
 import com.example.inventory.ui.state.ViewState
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
+import java.io.IOException
 
 class CaptureViewModel(
     private val ocrRepository: OcrRepository
@@ -118,7 +122,7 @@ class CaptureViewModel(
             it.copy(undoStack = it.undoStack + listOf(currentGroups))
         }
         
-        val updated = _state.value.ocrGroups.flatMap { group ->
+        val updated = _state.value.ocrGroups.asSequence().flatMap { group ->
             if (!selected.contains(group.id)) return@flatMap listOf(group)
             if (group.tokens.size > 1) {
                 group.tokens.map { token ->
@@ -169,7 +173,7 @@ class CaptureViewModel(
                     }
                 }
             }
-        }
+        }.toList()
         _state.update { it.copy(ocrGroups = updated, selectedGroupIds = emptySet()) }
     }
 
@@ -228,16 +232,28 @@ class CaptureViewModel(
         viewModelScope.launch {
             try {
                 _state.update { it.copy(processingState = ProcessingState.Processing()) }
-                val local = ocrRepository.recognizeLocal(file)
-                val online = ocrRepository.recognizeOnline(file)
-                val merged = ocrRepository.mergeResults(local, online)
+                val merged = coroutineScope {
+                    val localDeferred = async { ocrRepository.recognizeLocal(file) }
+                    val onlineDeferred = async { ocrRepository.recognizeOnline(file) }
+                    ocrRepository.mergeResults(localDeferred.await(), onlineDeferred.await())
+                }
                 _state.update {
                     it.copy(
                         ocrGroups = merged.groups,
                         processingState = ProcessingState.Success(merged.groups.size)
                     )
                 }
-            } catch (e: Exception) {
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: IOException) {
+                _state.update {
+                    it.copy(processingState = ProcessingState.Error(e.message ?: "Unknown error"))
+                }
+            } catch (e: IllegalArgumentException) {
+                _state.update {
+                    it.copy(processingState = ProcessingState.Error(e.message ?: "Unknown error"))
+                }
+            } catch (e: IllegalStateException) {
                 _state.update {
                     it.copy(processingState = ProcessingState.Error(e.message ?: "Unknown error"))
                 }

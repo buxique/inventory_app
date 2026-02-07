@@ -31,8 +31,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -78,11 +78,8 @@ fun StartScreen(
     val languageTag by context.settingsDataStore.data
         .map { prefs -> prefs[PrefsKeys.LANGUAGE_PREF_KEY] }
         .collectAsState(initial = null)
-    var showLanguageSelector by remember { mutableStateOf(true) }
-    LaunchedEffect(languageTag) {
-        if (languageTag != null) {
-            showLanguageSelector = false
-        }
+    val showLanguageSelector by remember(languageTag) {
+        derivedStateOf { languageTag == null }
     }
 
     Box(
@@ -181,8 +178,6 @@ fun StartScreen(
                             saveLanguagePreference(context, selectedLanguage)
                             if (selectedLanguage != "zh") {
                                 recreateActivity(context)
-                            } else {
-                                showLanguageSelector = false
                             }
                         }
                     },
