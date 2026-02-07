@@ -51,6 +51,9 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            pickFirsts += "META-INF/io.netty.versions.properties"
+            pickFirsts += "META-INF/INDEX.LIST"
+            pickFirsts += "META-INF/DEPENDENCIES"
         }
     }
 

@@ -118,8 +118,10 @@ fun InventoryApp(factory: AppViewModelFactory) {
             ImagePickerScreen(
                 onBack = { navController.popBackStack() },
                 onComplete = { selectedImages ->
-                    // TODO: 处理选中的图片
-                    navController.popBackStack()
+                    captureViewModel.addImagesToQueue(selectedImages)
+                    navController.navigate("capture") {
+                        popUpTo("imagePicker") { inclusive = true }
+                    }
                 }
             )
         }

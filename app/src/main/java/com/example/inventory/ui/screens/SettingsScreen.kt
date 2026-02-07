@@ -23,6 +23,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -35,11 +36,16 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,6 +61,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.inventory.R
+import com.example.inventory.ui.state.ExportState
+import com.example.inventory.ui.state.RestoreState
 import com.example.inventory.ui.viewmodel.SettingsViewModel
 import kotlin.math.roundToInt
 
@@ -75,6 +83,7 @@ fun SettingsScreen(
     onBack: () -> Unit
 ) {
     val state by viewModel.state.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
     var showS3Config by remember { mutableStateOf(false) }
     
     Scaffold(
@@ -100,6 +109,8 @@ fun SettingsScreen(
                 )
             )
         }
+        ,
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -110,6 +121,23 @@ fun SettingsScreen(
                 .padding(horizontal = 16.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            if (state.showS3ErrorDialog && state.s3ErrorMessage.isNotBlank()) {
+                ErrorBanner(
+                    text = state.s3ErrorMessage,
+                    actionText = stringResource(R.string.detail),
+                    onAction = viewModel::showS3Detail,
+                    onDismiss = viewModel::dismissS3Error
+                )
+            }
+            if (state.showUserErrorDialog && state.userErrorMessage.isNotBlank()) {
+                ErrorBanner(
+                    text = state.userErrorMessage,
+                    actionText = stringResource(R.string.close),
+                    onAction = viewModel::dismissUserError,
+                    onDismiss = viewModel::dismissUserError
+                )
+            }
+            
             LanguagePreferenceSection(
                 languageTag = state.languageTag,
                 onLanguageChange = viewModel::updateLanguage
@@ -152,6 +180,130 @@ fun SettingsScreen(
             HelpSection()
             
             Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
+
+    if (state.showS3DetailDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = viewModel::dismissS3Detail,
+            title = { Text(text = stringResource(R.string.s3_error_detail)) },
+            text = { Text(text = state.s3ErrorDetail) },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissS3Detail) {
+                    Text(text = stringResource(R.string.close))
+                }
+            }
+        )
+    }
+
+    val exportState = state.exportState
+    if (exportState is ExportState.Exporting) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {},
+            title = { Text(text = stringResource(R.string.msg_loading)) },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    CircularProgressIndicator()
+                    Text(text = exportState.message)
+                }
+            },
+            confirmButton = {}
+        )
+    } else if (exportState is ExportState.Error) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = viewModel::dismissExportState,
+            title = { Text(text = stringResource(R.string.error_title)) },
+            text = { Text(text = exportState.message) },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissExportState) {
+                    Text(text = stringResource(R.string.close))
+                }
+            }
+        )
+    }
+    val exportedMessage = stringResource(R.string.msg_exported)
+    LaunchedEffect(exportState) {
+        if (exportState is ExportState.Success) {
+            snackbarHostState.showSnackbar(message = exportedMessage)
+            viewModel.dismissExportState()
+        }
+    }
+
+    val restoreState = state.restoreState
+    if (restoreState is RestoreState.Restoring) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {},
+            title = { Text(text = stringResource(R.string.msg_loading)) },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    CircularProgressIndicator()
+                    Text(text = restoreState.message)
+                }
+            },
+            confirmButton = {}
+        )
+    } else if (restoreState is RestoreState.Error) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = viewModel::dismissRestoreState,
+            title = { Text(text = stringResource(R.string.error_title)) },
+            text = { Text(text = restoreState.message) },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissRestoreState) {
+                    Text(text = stringResource(R.string.close))
+                }
+            }
+        )
+    }
+    val restoredMessage = stringResource(R.string.msg_restored)
+    LaunchedEffect(restoreState) {
+        if (restoreState is RestoreState.Success) {
+            snackbarHostState.showSnackbar(message = restoredMessage)
+            viewModel.dismissRestoreState()
+        }
+    }
+}
+
+@Composable
+private fun ErrorBanner(
+    text: String,
+    actionText: String,
+    onAction: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.errorContainer,
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.weight(1f)
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onAction) {
+                    Text(text = actionText)
+                }
+                TextButton(onClick = onDismiss) {
+                    Text(text = stringResource(R.string.close))
+                }
+            }
         }
     }
 }

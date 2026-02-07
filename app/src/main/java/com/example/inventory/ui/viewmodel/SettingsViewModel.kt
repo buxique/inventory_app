@@ -444,6 +444,14 @@ class SettingsViewModel(
         _state.update { it.copy(showUserErrorDialog = false) }
     }
 
+    fun dismissExportState() {
+        _state.update { it.copy(exportState = ExportState.Idle) }
+    }
+
+    fun dismissRestoreState() {
+        _state.update { it.copy(restoreState = RestoreState.Idle) }
+    }
+
     private fun showUserError(message: String) {
         _state.update {
             it.copy(
